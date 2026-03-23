@@ -38,27 +38,27 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@noble/curves": "^1.8.1",
-    "@noble/hashes": "^1.7.1",
-    "@polkadot/api": "^15.4.1",
-    "@polkadot/util": "^14.0.2",
-    "@polkadot/util-crypto": "^14.0.2",
-    "@polkadot/wasm-crypto": "^7.4.1",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "@polkadot/api": "^15.10.2",
+    "@polkadot/util": "^13.5.9",
+    "@polkadot/util-crypto": "^13.5.9",
+    "@polkadot/wasm-crypto": "^7.5.4",
     "@stablelib/chacha20poly1305": "^2.0.1",
     "bs58": "^6.0.0",
-    "dotenv": "^16.3.1",
-    "viem": "^2.30.1"
+    "dotenv": "^16.6.1",
+    "viem": "^2.47.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^20.4.2",
-    "@types/yargs": "^17.0.33",
-    "eslint": "^10.0.3",
-    "rimraf": "^6.0.1",
-    "ts-node": "^10.9.1",
+    "@types/node": "^20.19.37",
+    "@types/yargs": "^17.0.35",
+    "eslint": "^10.1.0",
+    "rimraf": "^6.1.3",
+    "ts-node": "^10.9.2",
     "tsup": "^8.5.1",
-    "typescript": "^5.2.2",
-    "typescript-eslint": "^8.57.0"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.1"
   },
   "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac",
   "resolutions": {
