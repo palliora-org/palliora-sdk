@@ -14,4 +14,6 @@ export * from "./identity";
 export * from "./rotateKeys";
 
 export * from "@polkadot/util";
-export { ApiPromise, WsProvider, HttpProvider } from "@polkadot/api";;
+export * as utilCrypto from "@polkadot/util-crypto";
+export * as wasmCrypto from "@polkadot/wasm-crypto";
+export { ApiPromise, WsProvider, HttpProvider } from "@polkadot/api";
