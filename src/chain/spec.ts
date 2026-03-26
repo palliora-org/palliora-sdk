@@ -201,6 +201,7 @@ export const API_TYPES = {
 };
 
 export const DEFAULT_COMPUTE_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0 } };
+export const DEFAULT_EMPTY_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, agreement: [] } };
 
 export const API_EXTENSIONS = {
 	CheckAppId: {
