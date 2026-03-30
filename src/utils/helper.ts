@@ -1,5 +1,5 @@
-import type { Hex } from "viem";
 import { DEBUG } from "../config";
+import { Hex } from "./types";
 
 /**
  * Converts a token amount expressed in milliPALI into the smallest PALI denomination (10^-18 PALI) as a bigint.
