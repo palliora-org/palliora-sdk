@@ -135,11 +135,110 @@ export const API_TYPES = {
 		extra: "CheckAppIdExtra",
 		types: "CheckAppIdTypes",
 	},
+	FeePayload: {
+		compute: "u128",
+		guardian: "u128",
+		verifier: "u128",
+	},
+	SilentThresholdParams: {
+		td_params: 'Vec<u8>',
+		pk_bytes: 'Vec<u8>',
+		tau_params: 'Vec<u8>'
+	},
+	ThresholdAlgos: {
+		_enum: {
+		SilentThreshold: 'SilentThresholdParams'
+		}
+	},
+	ChaCha20Poly1305Params: {
+		nonce: '[u8; 12]'
+	},
+	Aes256GcmParams: {
+		nonce: '[u8; 12]'
+	},
+	SymmetricAlgos: {
+		_enum: {
+		ChaCha20Poly1305: 'ChaCha20Poly1305Params',
+		Aes256Gcm: 'Aes256GcmParams'
+		}
+	},
+	CipherSuiteEncrypted: {
+		threshold: 'ThresholdAlgos',
+		symmetric: 'SymmetricAlgos'
+	},
+	CipherSuite: {
+		_enum: {
+		Plaintext: 'Null',
+		Encrypted: 'CipherSuiteEncrypted'
+		}
+	},
+	ConfidentialityLevel: {
+		_enum: ['Trusted', 'TEE', 'FHE', 'SMPC']
+	},
+	NativeExecuteDA: {
+		_enum: ['Inference']
+	},
+	NativeDataDA: {
+		_enum: ['DaFalse', 'DaTrue']
+	},
+	DAInputInline: {
+		data: 'Vec<u8>'
+	},
+	DAInputChainTransaction: {
+		block_number: 'u64',
+		extrinsic_index: 'u32'
+	},
+	DAInputIpfs: {
+		cid: 'Vec<u8>'
+	},
+	DAInputUrl: {
+		url: 'Vec<u8>'
+	},
+	DAInput: {
+		_enum: {
+		Inline: 'DAInputInline',
+		ChainTransaction: 'DAInputChainTransaction',
+		Ipfs: 'DAInputIpfs',
+		Url: 'DAInputUrl',
+		NativeExecute: 'NativeExecuteDA',
+		NativeData: 'NativeDataDA'
+		}
+	},
+	ContractType: {
+		_enum: {
+		Dormant: "Dormant",
+		Active: "Active"
+		}
+	},
+	ComputeInfo: {
+		cipher: 'CipherSuite',
+		computer_indices: 'Vec<u32>',
+		fees: 'u128',
+		deadline: 'u64',
+		confidentiality: 'ConfidentialityLevel',
+		fee_function: 'Option<u8>',
+		input: 'DAInput',
+		program: 'DAInput'
+	},
+	Contract: {
+		contract_type: 'ContractType',
+		guardians: 'Vec<AccountId>',
+		pre_check: 'Option<ComputeInfo>',
+		compute: 'ComputeInfo',
+		post_check: 'Option<ComputeInfo>',
+		result_cipher: 'CipherSuite'
+	},
+	AgreementInfo: {
+		status: 'AgreementStatus',
+		creator: 'AccountId',
+		index: 'u32'
+	},
     ComputePayload: {
-            da_type: "u8",
-            agreement: "Option<BoundedVec<[u8; 32], 10>>",
-            verification: "u8",
-            compute: "u8",
+		da_type: "u8",
+		agreement: "Option<BoundedVec<[u8; 32], 10>>",
+		verification: "u8",
+		compute: "u8",
+		fee: "FeePayload",
     },
 	BlockLengthColumns: "Compact<u32>",
 	BlockLengthRows: "Compact<u32>",
@@ -200,8 +299,8 @@ export const API_TYPES = {
 	GDataProof: "(GRawScalar, GProof)",
 };
 
-export const DEFAULT_COMPUTE_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0 } };
-export const DEFAULT_EMPTY_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, agreement: [] } };
+export const DEFAULT_COMPUTE_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, fee: { compute: 0, guardian: 0, verifier: 0 } } };
+export const DEFAULT_EMPTY_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, agreement: [], fee: { compute: 0, guardian: 0, verifier: 0 } } };
 
 export const API_EXTENSIONS = {
 	CheckAppId: {
