@@ -238,7 +238,6 @@ export const API_TYPES = {
 		agreement: "Option<BoundedVec<[u8; 32], 10>>",
 		verification: "u8",
 		compute: "u8",
-		fee: "FeePayload",
     },
 	BlockLengthColumns: "Compact<u32>",
 	BlockLengthRows: "Compact<u32>",
@@ -299,8 +298,8 @@ export const API_TYPES = {
 	GDataProof: "(GRawScalar, GProof)",
 };
 
-export const DEFAULT_COMPUTE_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, fee: { compute: 0, guardian: 0, verifier: 0 } } };
-export const DEFAULT_EMPTY_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, agreement: [], fee: { compute: 0, guardian: 0, verifier: 0 } } };
+export const DEFAULT_COMPUTE_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0 } };
+export const DEFAULT_EMPTY_PAYLOAD =  { compute: { da_type: 0, verification: 0, compute: 0, agreement: [] } };
 
 export const API_EXTENSIONS = {
 	CheckAppId: {
