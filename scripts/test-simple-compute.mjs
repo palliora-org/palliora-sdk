@@ -35,14 +35,11 @@ export async function testSimpleComputeIntegration() {
   const selected = guardianEntries.slice(0, 3);
   assertCondition(selected.length > 0, "No guardians selected for compute");
 
-  const guardianAddresses = selected.map((g) => g.address);
-  const agreement = selected.map((g) => bs58.decode(g.peerid).subarray(6));
-
   const api = await getApi();
   if (!api) throw new Error("Api not initialized");
 
   // Submit DA input first and use its block/index as ChainTransaction input reference.
-  const inputPayload = JSON.stringify({ prompt: "integration-test-simple-compute" });
+  const inputPayload = JSON.stringify("ujjwal");
   const daTx = api.tx.dataAvailability.submitData(inputPayload);
   const daResult = await signAndSend(daTx, signer, DEFAULT_EMPTY_PAYLOAD);
 
@@ -52,15 +49,14 @@ export async function testSimpleComputeIntegration() {
   );
 
   const result = await simpleCompute({
-    guardians: guardianAddresses,
+    guardians: selected,
     inputBlockNumber: daResult.blockNumber,
     inputExtrinsicIndex: daResult.index,
     programUrl:
-      "hello-world",
-    fees: 0,
+      "ujjwalpal/hello-world:test",
+    fees: BigInt("2"),
     deadline: 0,
     trustIndex: 0,
-    opts: { compute: { da_type: 1, agreement, verification: 0, compute: 1 } },
   });
 
   assertCondition(!!result.hash, "simpleCompute tx hash is missing");
@@ -119,13 +115,14 @@ export async function testInlineProgramComputeIntegration() {
   );
 
   // Use Docker 'hello-world' image name as inline program bytes.
-  const inlineProgramData = Array.from(new TextEncoder().encode("hello-world"));
+  const inlineProgramData = Array.from(new TextEncoder().encode("ujjwalpal/hello-world:test"));
+  const inlineInputData = Array.from(new TextEncoder().encode("ujjwal"));
 
   const plaintextCipher = "Plaintext";
   const computeStep = {
     cipher: plaintextCipher,
     computer_indices: guardianAddresses.map((_, i) => i),
-    fees: 0,
+    fees: BigInt("2"),
     deadline: 0,
     confidentiality: {
       Trusted: {
@@ -134,14 +131,13 @@ export async function testInlineProgramComputeIntegration() {
     },
     fee_function: null,
     input: {
-      ChainTransaction: {
-        block_number: daResult.blockNumber,
-        extrinsic_index: daResult.index,
+      Inline: {
+        data: inlineInputData,
       },
     },
     program: {
-      Inline: {
-        data: inlineProgramData,
+      Url: {
+        url: inlineProgramData,
       },
     },
   };

@@ -21,8 +21,6 @@ async function main() {
   console.log("Guardians:", guardianEntries);
 
   const selected = guardianEntries.slice(0, 3);
-  const guardianAddresses = selected.map((g) => g.address);
-  const agreement = selected.map((g) => bs58.decode(g.peerid).subarray(6));
   const model = "llama3.2:latest";
   const payload = {
     model,
@@ -43,10 +41,9 @@ async function main() {
   // Submit a simple inference request
   const result = await inferenceCompute({
     input: JSON.stringify(payload),
-    guardians: guardianAddresses,
-    fees: 0,
+    guardians: selected,
+    fees: 0.2,
     deadline: 0,
-    opts: { compute: { da_type: 1, agreement, verification: 0, compute: 1 } },
   });
 
   console.log("Inference result:", result);
