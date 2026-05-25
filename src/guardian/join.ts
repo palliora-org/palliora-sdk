@@ -1,5 +1,6 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
+import { formatPaliAmount } from "../utils/token";
 
 export async function joinGuardian(account: any, prefs: any) {
   const api = await getApi();
@@ -13,6 +14,9 @@ export async function joinGuardian(account: any, prefs: any) {
       .map((s) => s.trim())
       .filter((s) => s.length > 0) || undefined;
 
+  const feeThreshold =
+    typeof prefs.fee === "bigint" ? prefs.fee : BigInt(prefs.fee || "0");
+
   const guardianPrefs = {
     pubKey: account.publicKey,
     guardian: prefs.standard,
@@ -25,12 +29,13 @@ export async function joinGuardian(account: any, prefs: any) {
       fhe: computeOpts?.includes("fhe") || false,
       zkp: computeOpts?.includes("zkp") || false,
     },
+    feeThreshold,
   };
 
   debugLog(
     account.address,
     "joining as guardian with preferences:",
-    guardianPrefs
+    { ...guardianPrefs, feeThreshold: formatPaliAmount(feeThreshold) }
   );
 
   const guardTx = api.tx.staking.guard(guardianPrefs);

@@ -1,9 +1,10 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
+import { formatPaliAmount } from "../utils/token";
 
 export async function newStake(
   account: any,
-  amount: bigint,
+  amountBaseUnits: bigint,
   rewardDestination: string = "Staked"
 ) {
   const api = await getApi();
@@ -12,10 +13,10 @@ export async function newStake(
   assert(account, "Account not initialized");
 
   debugLog(
-    `Staking amount: ${amount} for account: ${account.address} with reward destination: ${rewardDestination}`
+    `Staking amount: ${formatPaliAmount(amountBaseUnits)} for account: ${account.address} with reward destination: ${rewardDestination}`
   );
 
-  const stakeTx = api.tx.staking.bond(amount, rewardDestination);
+  const stakeTx = api.tx.staking.bond(amountBaseUnits, rewardDestination);
   const hash = await signAndSend(stakeTx, account);
 
   debugLog(`Stake transaction sent with hash: ${hash.hash}`);

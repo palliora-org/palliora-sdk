@@ -189,10 +189,13 @@ export const API_TYPES = {
 		extrinsic_index: 'u32'
 	},
 	DAInputIpfs: {
-		cid: 'Vec<u8>'
+		cid: 'Vec<u8>',
+		size: 'u64'
 	},
 	DAInputUrl: {
-		url: 'Vec<u8>'
+		url: 'Vec<u8>',
+		size: 'u64',
+		hash: 'Option<Vec<u8>>'
 	},
 	DAInput: {
 		_enum: {
@@ -210,6 +213,20 @@ export const API_TYPES = {
 		Active: "Active"
 		}
 	},
+	StoreType: {
+		_enum: {
+		Dataset: "Dataset",
+		Model: "Model",
+		Agent: "Agent",
+		Other: "Other"
+		}
+	},
+	ComputeMetadata: {
+		name: 'Vec<u8>',
+		description: 'Vec<u8>',
+		store_type: 'StoreType',
+		group_id: 'H256',
+	},
 	ComputeInfo: {
 		cipher: 'CipherSuite',
 		computer_indices: 'Vec<u32>',
@@ -217,8 +234,10 @@ export const API_TYPES = {
 		deadline: 'u64',
 		confidentiality: 'ConfidentialityLevel',
 		fee_function: 'Option<u8>',
+		program_env: 'Option<Vec<u8>>',
 		input: 'DAInput',
-		program: 'DAInput'
+		program: 'DAInput',
+		metadata: 'Option<ComputeMetadata>',
 	},
 	Contract: {
 		contract_type: 'ContractType',
@@ -239,6 +258,21 @@ export const API_TYPES = {
 		verification: "u8",
 		compute: "u8",
     },
+	ComputePrefs: {
+		trusted: "bool",
+		tee: "bool",
+		mpc: "bool",
+		fhe: "bool",
+		zkp: "bool",
+	},
+	GuardianPrefs: {
+		pubKey: "[u8; 32]",
+		guardian: "bool",
+		verifier: "bool",
+		compute: "bool",
+		computePrefs: "Option<ComputePrefs>",
+		feeThreshold: "u128",
+	},
 	BlockLengthColumns: "Compact<u32>",
 	BlockLengthRows: "Compact<u32>",
 	BlockLength: {
