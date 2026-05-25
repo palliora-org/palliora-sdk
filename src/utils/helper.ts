@@ -1,22 +1,5 @@
 import { DEBUG } from "../config";
 import { Hex } from "./types";
-
-/**
- * Converts a token amount expressed in milliPALI into the smallest PALI denomination (10^-18 PALI) as a bigint.
- *
- * The function takes milliPALI denomination and returns the bigint value in the lowest denomination of the PALI token which is 10^-18.
- *
- * @param arg - The token amount to convert. Can be a string, number, or bigint representing an amount in milliPALI.
- * @returns The token amount converted to the smallest PALI unit (10^-18 PALI) as a bigint.
- *
- * @example
- * // 1 milliPALI => 10^15 lowest-denomination units
- * tokenToBigint("1"); // => 1000000000000000n
- */
-export const tokenToBigint = (arg: string | number | bigint): bigint => {
-  const val = typeof arg === "bigint" ? arg : BigInt(arg);
-  return val * 10n ** 15n;
-};
  
 /**
  * Converts a hex string into a Uint8Array.

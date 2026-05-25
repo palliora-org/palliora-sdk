@@ -1,13 +1,37 @@
 import { assert } from "./assert";
-import { formatBalance } from "@polkadot/util";
+import { formatUnits, parseUnits } from "viem";
 import { getApi } from "../chain";
+
+export const PALI_SYMBOL = "PALI";
+export const PALI_DECIMALS = 18;
 
 interface TokenProperties {
   symbol: string;
   decimals: number;
 }
 
+export type PaliAmountInput = string | number;
+export type AtomicPaliAmount = bigint;
+
 let tokenCache: TokenProperties | null = null;
+
+export const toAtomicPaliAmount = (amount: PaliAmountInput): AtomicPaliAmount => {
+  const normalizedAmount = String(amount).trim();
+
+  if (!normalizedAmount) {
+    throw new Error("Token amount cannot be empty");
+  }
+
+  return parseUnits(normalizedAmount, PALI_DECIMALS);
+};
+
+export const fromAtomicPaliAmount = (amount: bigint): string => {
+  return formatUnits(amount, PALI_DECIMALS);
+};
+
+export const formatPaliAmount = (amount: bigint, symbol: string = PALI_SYMBOL): string => {
+  return `${fromAtomicPaliAmount(amount)} ${symbol}`;
+};
 
 /**
  * Fetch token name and decimals from RPC system properties
@@ -27,8 +51,8 @@ export async function fetchTokenProperties(): Promise<TokenProperties> {
     assert(systemProperties, "Failed to fetch system properties from RPC");
 
     const tokenProperties: TokenProperties = {
-      symbol: (systemProperties?.tokenSymbol as string[] || ["UNIT"])[0],
-      decimals: Number((systemProperties?.tokenDecimals as string[] || ['18'])[0]),
+      symbol: (systemProperties?.tokenSymbol as string[] || [PALI_SYMBOL])[0],
+      decimals: Number((systemProperties?.tokenDecimals as string[] || [String(PALI_DECIMALS)])[0]),
     };
 
     // Store in cache
@@ -36,7 +60,6 @@ export async function fetchTokenProperties(): Promise<TokenProperties> {
 
     return tokenProperties;
   } catch (error) {
-    console.error("Failed to fetch token properties:", error);
     throw error;
   }
 }
@@ -61,18 +84,10 @@ export function clearTokenCache(): void {
  * @param balance - The balance value to format
  * @returns Formatted balance string
  */
-export async function formatBalanceWithTokenProperties(balance: string | number): Promise<string> {
+export async function formatBalanceWithTokenProperties(balance: string | number | bigint): Promise<string> {
   const tokenProperties = await fetchTokenProperties();
-  
-  if (!tokenProperties) {
-    throw new Error(
-      "Token properties not yet cached. Call fetchTokenProperties first.",
-    );
-  }
 
-  return formatBalance(balance, {
-    decimals: tokenProperties.decimals,
-    withSi: true,
-    withUnit: tokenProperties.symbol,
-  });
+  return `${formatUnits(typeof balance === "bigint" ? balance : BigInt(balance), tokenProperties.decimals)} ${tokenProperties.symbol}`;
 }
+
+export const tokenToBigint = toAtomicPaliAmount;

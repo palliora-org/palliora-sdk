@@ -7,7 +7,7 @@ import {
   hexToUint8Array,
   uint8ArrayToBase64,
 } from "../utils";
-import { OnChainRef } from "./types";
+import { OnChainRef, SubmitTEDataResult } from "./types";
 
 export async function submitData(account: any, data: string) {
   const api = await getApi();
@@ -56,4 +56,57 @@ export async function submitTEData(
   debugLog(`TE data availability transaction sent with hash: ${hash.hash}`);
 
   return hash;
+}
+
+/**
+ * Identical to submitTEData but additionally returns the populated CipherSuite
+ * so callers can pass it directly to registerDataAgreement without
+ * re-deriving the cipher parameters.
+ */
+export async function submitTEDataWithCipher(
+  account: any,
+  data: string,
+  chosenGuardians: any[],
+  tau_params: string,
+  agg_key: string,
+  group_pk: string,
+): Promise<SubmitTEDataResult> {
+  const { encoded: encryptedKey, ikm } = testCrypt(tau_params, agg_key);
+  const shared_key = gen_stretched_key(hexToUint8Array(ikm as Hex));
+
+  const encoder = new TextEncoder();
+  const dataUint8Array = encoder.encode(data);
+  const { ciphertext, nonce } = encrypt(dataUint8Array, shared_key);
+
+  const ciphertextHex =
+    "0x" +
+    Array.from(ciphertext)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+  const api = await getApi();
+  assert(api, "Failed to get API connection");
+
+  const request = await api.tx.dataAvailability.submitData(ciphertextHex);
+  const ref = await signAndSend(request, account, DEFAULT_EMPTY_PAYLOAD);
+
+  debugLog(`TE data availability transaction sent with hash: ${ref.hash}`);
+
+  return {
+    ref,
+    cipher: {
+      Encrypted: {
+        threshold: {
+          SilentThreshold: {
+            td_params: Array.from(hexToUint8Array(encryptedKey as Hex)),
+            pk_bytes: Array.from(hexToUint8Array(group_pk as Hex)),
+            tau_params: Array.from(hexToUint8Array(tau_params as Hex)),
+          },
+        },
+        symmetric: {
+          ChaCha20Poly1305: { nonce: Array.from(nonce) },
+        },
+      },
+    },
+  };
 }

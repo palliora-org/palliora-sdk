@@ -135,12 +135,144 @@ export const API_TYPES = {
 		extra: "CheckAppIdExtra",
 		types: "CheckAppIdTypes",
 	},
+	FeePayload: {
+		compute: "u128",
+		guardian: "u128",
+		verifier: "u128",
+	},
+	SilentThresholdParams: {
+		td_params: 'Vec<u8>',
+		pk_bytes: 'Vec<u8>',
+		tau_params: 'Vec<u8>'
+	},
+	ThresholdAlgos: {
+		_enum: {
+		SilentThreshold: 'SilentThresholdParams'
+		}
+	},
+	ChaCha20Poly1305Params: {
+		nonce: '[u8; 12]'
+	},
+	Aes256GcmParams: {
+		nonce: '[u8; 12]'
+	},
+	SymmetricAlgos: {
+		_enum: {
+		ChaCha20Poly1305: 'ChaCha20Poly1305Params',
+		Aes256Gcm: 'Aes256GcmParams'
+		}
+	},
+	CipherSuiteEncrypted: {
+		threshold: 'ThresholdAlgos',
+		symmetric: 'SymmetricAlgos'
+	},
+	CipherSuite: {
+		_enum: {
+		Plaintext: 'Null',
+		Encrypted: 'CipherSuiteEncrypted'
+		}
+	},
+	ConfidentialityLevel: {
+		_enum: ['Trusted', 'TEE', 'FHE', 'SMPC']
+	},
+	NativeExecuteDA: {
+		_enum: ['Inference']
+	},
+	NativeDataDA: {
+		_enum: ['DaFalse', 'DaTrue']
+	},
+	DAInputInline: {
+		data: 'Vec<u8>'
+	},
+	DAInputChainTransaction: {
+		block_number: 'u64',
+		extrinsic_index: 'u32'
+	},
+	DAInputIpfs: {
+		cid: 'Vec<u8>',
+		size: 'u64'
+	},
+	DAInputUrl: {
+		url: 'Vec<u8>',
+		size: 'u64',
+		hash: 'Option<Vec<u8>>'
+	},
+	DAInput: {
+		_enum: {
+		Inline: 'DAInputInline',
+		ChainTransaction: 'DAInputChainTransaction',
+		Ipfs: 'DAInputIpfs',
+		Url: 'DAInputUrl',
+		NativeExecute: 'NativeExecuteDA',
+		NativeData: 'NativeDataDA'
+		}
+	},
+	ContractType: {
+		_enum: {
+		Dormant: "Dormant",
+		Active: "Active"
+		}
+	},
+	StoreType: {
+		_enum: {
+		Dataset: "Dataset",
+		Model: "Model",
+		Agent: "Agent",
+		Other: "Other"
+		}
+	},
+	ComputeMetadata: {
+		name: 'Vec<u8>',
+		description: 'Vec<u8>',
+		store_type: 'StoreType',
+		group_id: 'H256',
+	},
+	ComputeInfo: {
+		cipher: 'CipherSuite',
+		computer_indices: 'Vec<u32>',
+		fees: 'u128',
+		deadline: 'u64',
+		confidentiality: 'ConfidentialityLevel',
+		fee_function: 'Option<u8>',
+		program_env: 'Option<Vec<u8>>',
+		input: 'DAInput',
+		program: 'DAInput',
+		metadata: 'Option<ComputeMetadata>',
+	},
+	Contract: {
+		contract_type: 'ContractType',
+		guardians: 'Vec<AccountId>',
+		pre_check: 'Option<ComputeInfo>',
+		compute: 'ComputeInfo',
+		post_check: 'Option<ComputeInfo>',
+		result_cipher: 'CipherSuite'
+	},
+	AgreementInfo: {
+		status: 'AgreementStatus',
+		creator: 'AccountId',
+		index: 'u32'
+	},
     ComputePayload: {
-            da_type: "u8",
-            agreement: "Option<BoundedVec<[u8; 32], 10>>",
-            verification: "u8",
-            compute: "u8",
+		da_type: "u8",
+		agreement: "Option<BoundedVec<[u8; 32], 10>>",
+		verification: "u8",
+		compute: "u8",
     },
+	ComputePrefs: {
+		trusted: "bool",
+		tee: "bool",
+		mpc: "bool",
+		fhe: "bool",
+		zkp: "bool",
+	},
+	GuardianPrefs: {
+		pubKey: "[u8; 32]",
+		guardian: "bool",
+		verifier: "bool",
+		compute: "bool",
+		computePrefs: "Option<ComputePrefs>",
+		feeThreshold: "u128",
+	},
 	BlockLengthColumns: "Compact<u32>",
 	BlockLengthRows: "Compact<u32>",
 	BlockLength: {
