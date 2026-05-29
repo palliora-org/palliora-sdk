@@ -3,6 +3,7 @@ import { AccountSourceType, CryptoType } from "./types";
 import { Keyring } from "@polkadot/api";
 import { hexToU8a } from "@polkadot/util";
 import { ed25519PairFromSecret, secp256k1PairFromSeed } from "@polkadot/util-crypto";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
 /**
  * Creates a Substrate account from a private key, seed, or mnemonic.
@@ -12,11 +13,11 @@ import { ed25519PairFromSecret, secp256k1PairFromSeed } from "@polkadot/util-cry
  * @returns The keypair object.
  */
 export async function createAccount(
-  input: any,
+  input: string,
   type: AccountSourceType,
   name: string = "default",
   cryptoType: CryptoType = CryptoType.SR25519
-): Promise<any> {
+): Promise<KeyringPair> {
   await waitReady();
   const keyring = new Keyring({ type: cryptoType });
 

@@ -3,9 +3,10 @@ import { createAgreement } from "../compute";
 import { assert, debugLog } from "../utils";
 import { formatPaliAmount } from "../utils/token";
 import { CipherSuite, OnChainRef } from "./types";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
 export async function writeMetadata(
-  account: any,
+  account: KeyringPair,
   name: string,
   description: string,
   ref: OnChainRef,
@@ -55,7 +56,7 @@ export interface DataAgreementParams {
   /** DA blob reference returned by submitTEData. */
   ref: OnChainRef;
   /** Guardian account IDs that participate in this agreement. */
-  guardians: { peerid: string; address: string }[];
+  guardians: string[];
   /** Fee for the agreement in PALI atomic units. */
   fees: bigint;
   /** If provided, populates ComputeInfo.metadata in the contract. */
@@ -76,7 +77,7 @@ export interface DataAgreementParams {
 }
 
 export async function registerDataAgreement(
-  account: any,
+  account: KeyringPair,
   params: DataAgreementParams,
 ) {
   debugLog(
@@ -119,7 +120,7 @@ export async function registerDataAgreement(
   };
 
   const contract = {
-    contract_type: "Dormant",
+    contract_type: "Dormant" as const,
     guardians: params.guardians,
     pre_check: null,
     compute: computeStep,

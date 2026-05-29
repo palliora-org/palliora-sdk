@@ -34,9 +34,11 @@ export interface SubmitTEDataResult {
   cipher: CipherSuite;
 }
 
+export type GuardianAddress = string;
+
 export interface GuardianGroupInfo {
   groupId: string;
-  guardians: any[];
+  guardians: GuardianAddress[];
   tauParams: string;
   aggKey: string;
   groupPk: string;

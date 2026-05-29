@@ -1,25 +1,39 @@
-import bs58 from "bs58";
 import { getApi, getGuardianAddress, getKeyring, signAndSend } from "../chain";
-import { assert, debugLog } from "../utils";
+import { assert, debugLog, toAtomicPaliAmount } from "../utils";
+import type { KeyringPair } from "@polkadot/keyring/types";
+import type { SubmittableExtrinsic } from "@polkadot/api/types";
+import type { GuardianAddress } from "../da/types";
+
+export interface ComputeContract {
+  contract_type: "Active" | "Dormant";
+  guardians: GuardianAddress[];
+  pre_check?: unknown;
+  compute: Record<string, unknown>;
+  post_check?: unknown;
+  result_cipher: unknown;
+}
 
 export async function createAgreement(
-  contract: any,
-  account: any,
-): Promise<{ blockNumber: any; index: any; hash: any; agreementId?: string }> {
+  contract: ComputeContract,
+  account: KeyringPair,
+): Promise<{
+  blockNumber: number;
+  index: number;
+  hash: string;
+  agreementId?: string;
+}> {
   const api = await getApi();
   if (!api) throw new Error("Api not initialized");
 
-  const guardians = contract.guardians as { peerid: string; address: string }[];
-  const agreement = guardians.map((g) => bs58.decode(g.peerid).subarray(6));
-  const txContract = {
-    ...contract,
-    guardians: guardians.map((g) => g.address),
-  };
-  const tx = (api.tx as any).compute.agreement(txContract);
+  const tx = (
+    api.tx as Record<
+      string,
+      Record<string, (...args: unknown[]) => SubmittableExtrinsic<"promise">>
+    >
+  )["compute"]["agreement"](contract);
   const opts = {
     compute: {
       da_type: 1,
-      agreement,
       verification: 0,
       compute: contract.contract_type === "Active" ? 1 : 0,
     },
@@ -32,21 +46,22 @@ export async function createAgreement(
   );
 
   if (!tx_result.isError) {
-    const agreementCreatedEvent = tx_result.events.find((event: any) => {
-      return (
-        event.event.section === "compute" &&
-        event.event.method === "AgreementCreated"
-      );
-    });
+    const agreementCreatedEvent = tx_result.events.find(
+      (event: {
+        event: { section: string; method: string; data: unknown[] };
+      }) => {
+        return (
+          event.event.section === "compute" &&
+          event.event.method === "AgreementCreated"
+        );
+      },
+    );
 
     if (agreementCreatedEvent) {
-      debugLog(
-        "Agreement data:",
-        agreementCreatedEvent.event.data.toString(),
-      );
+      debugLog("Agreement data:", agreementCreatedEvent.event.data.toString());
       return {
         blockNumber,
-        index,
+        index: index ?? 0,
         hash,
         agreementId:
           agreementCreatedEvent.event.data[0]?.toHex?.() ??
@@ -57,21 +72,23 @@ export async function createAgreement(
     }
   }
 
-  return { blockNumber, index, hash };
+  return { blockNumber, index: index ?? 0, hash };
 }
 
 export async function createSimpleAgreement() {
-  const guardianIds = (await getGuardianAddress()).slice(0, 3);
+  const guardianIds = (await getGuardianAddress())
+    .slice(0, 3)
+    .map((g) => g.address);
   assert(guardianIds.length === 3, "Not enough guardians to create agreement");
 
   const contract = {
-    contract_type: "Dormant",
+    contract_type: "Dormant" as const,
     guardians: guardianIds,
     pre_check: null,
     compute: {
       cipher: "Plaintext",
       computer_indices: [0, 1, 2],
-      fees: 0n,
+      fees: toAtomicPaliAmount("0.01") ,
       deadline: 0,
       confidentiality: { Trusted: { trust_index: 0 } },
       fee_function: null,

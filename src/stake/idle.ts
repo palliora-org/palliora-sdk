@@ -1,7 +1,8 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function joinIdleStaker(account: any) {
+export async function joinIdleStaker(account: KeyringPair) {
   const api = await getApi();
 
   assert(api, "API not initialized");

@@ -4,7 +4,7 @@ import { toAtomicPaliAmount, type PaliAmountInput } from "../utils/token";
 
 export interface SimpleComputeParams {
   /** Guardian account IDs that participate in this compute. */
-  guardians: { peerid: string; address: string }[];
+  guardians: string[];
   /** Input reference block number from which to read the tx payload. */
   inputBlockNumber: number;
   /** Input reference extrinsic index within the input block. */
@@ -58,7 +58,7 @@ export async function simpleCompute(params: SimpleComputeParams) {
   };
 
   const contract = {
-    contract_type: "Active",
+    contract_type: "Active" as const,
     guardians: params.guardians,
     pre_check: null,
     compute: computeStep,

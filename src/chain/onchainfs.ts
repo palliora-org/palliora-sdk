@@ -5,6 +5,8 @@ import { encrypt, gen_stretched_key } from "../crypto/cipher";
 import { hexToUint8Array, uint8ArrayToBase64 } from "../utils";
 import type { Hex } from "viem";
 import { signAndSend } from "./utils";
+import type { KeyringPair } from "@polkadot/keyring/types";
+import type { GuardianGroupInfo } from "../da/types";
 
 type OnChainFileOptions = {
 	file: File;
@@ -13,20 +15,28 @@ type OnChainFileOptions = {
 	description: string;
 	baseCost: bigint;
 	ownerL2Address: string;
-	guardianInfo: any;
+	guardianInfo: GuardianGroupInfo;
 }
+
+type ChunkRef = { blockNumber: number; extrinsicIndex: number };
+
+type FileMetadata = {
+	name: string;
+	description: string;
+	startRef: [number, number];
+};
 
 const getBlock = async (api: ApiPromise, blockNumber: number) => {
 	const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
 	return await api.rpc.chain.getBlock(blockHash);
 };
-const getFileMetadataCall = async (api: ApiPromise, metadataRef: any) => {
+const getFileMetadataCall = async (api: ApiPromise, metadataRef: [number, number]) => {
 	const block = await getBlock(api, metadataRef[0]);
 	const call = block.block.extrinsics[metadataRef[1]];
 	return call.method;
 };
 
-const getFileMetadata = async (api: ApiPromise, metadataRef: any) => {
+const getFileMetadata = async (api: ApiPromise, metadataRef: [number, number]): Promise<FileMetadata> => {
 	const call = await getFileMetadataCall(api, metadataRef);
 
 	// @ts-expect-error
@@ -34,7 +44,7 @@ const getFileMetadata = async (api: ApiPromise, metadataRef: any) => {
 	// @ts-expect-error
 	const description = new TextDecoder().decode(call.args[1]);
 	// @ts-expect-error
-	const startRef = [call.args[2][0].toNumber(), call.args[2][1].toNumber()];
+	const startRef = [call.args[2][0].toNumber(), call.args[2][1].toNumber()] as [number, number];
 
 	return {
 		name,
@@ -52,7 +62,7 @@ async function getFileSHA256(file: File): Promise<string> {
 
 }
 
-const readDataFromChain = async (api: ApiPromise, dataRef: any) => {
+const readDataFromChain = async (api: ApiPromise, dataRef: [number, number]) => {
 	const call = await getFileMetadataCall(api, dataRef);
 	return call.args[0].toU8a();
 };
@@ -60,23 +70,20 @@ const readDataFromChain = async (api: ApiPromise, dataRef: any) => {
 class MCryptFs {
 	_api;
 	_init;
-	_metaRef;
-	_metadata;
-	_chunkRefs: any;
-	_startRef: any;
+	_metaRef: [number, number] | null;
+	_metadata: FileMetadata | null;
+	_chunkRefs: ChunkRef[];
 
-	constructor(mcryptApi: any, metadataRef: any, metadata: any) {
+	constructor(mcryptApi: any, metadataRef: [number, number] | null, metadata: FileMetadata | null) {
 		this._api = mcryptApi;
 		this._metaRef = metadataRef;
 		this._metadata = metadata;
 		this._init = true;
+		this._chunkRefs = [];
 	}
 
 	static dummyInstance(mcryptApi: any) {
-		return new MCryptFs(mcryptApi, null, {
-			name: "on-chain-file-name.txt",
-			description: "File uploaded using mcrypt-onchain-fs",
-		});
+		return new MCryptFs(mcryptApi, null, null);
 	}
 
 	isValid() {
@@ -109,16 +116,16 @@ class MCryptFsWriter {
 	_fileName: string;
 	_baseCost;
 	_ownerL2Address;
-	_guardianInfo: any;
+	_guardianInfo: GuardianGroupInfo;
 	_api;
-	_account: any;
-	_chunkRefs: any[];
+	_account: KeyringPair;
+	_chunkRefs: ChunkRef[];
 	_blockNumber;
 	_extrinsicIndex;
 	_progress;
-	_error: any;
+	_error: Error | null;
 
-	constructor(fileOptions: OnChainFileOptions, chunkSize = 500, mcryptApi: any, account: any) {
+	constructor(fileOptions: OnChainFileOptions, chunkSize = 500, mcryptApi: any, account: KeyringPair) {
 		const {
 			file: iFile,
 			filePath,
@@ -153,7 +160,7 @@ class MCryptFsWriter {
 		this._error = null;
 	}
 
-	prependMetadata(chunk: any) {
+	prependMetadata(chunk: Blob) {
 		const blockNumberBuffer = new ArrayBuffer(4);
 		const blockView = new DataView(blockNumberBuffer);
 		blockView.setUint32(0, this._blockNumber, false);
@@ -165,24 +172,24 @@ class MCryptFsWriter {
 		return new Blob([blockNumberBuffer, extIndexBuffer, chunk]);
 	}
 
-	async writeChunk(chunk: any) {
+	async writeChunk(chunk: Blob): Promise<{ blockNumber: number; index: number }> {
 		const request = this._api.tx.dataAvailability.submitData(
 			Array.from(new Uint8Array(await chunk.arrayBuffer()))
 		);
 		console.log("account: ", this._account);
-		return new Promise((resolve) => {
-			request.signAndSend(this._account, { app_id: 1 }, (result: any) => {
+		return new Promise<{ blockNumber: number; index: number }>((resolve) => {
+			request.signAndSend(this._account, { app_id: 1 }, (result: { isInBlock: boolean; isFinalized: boolean; isError: boolean; blockNumber?: { toNumber(): number }; txIndex?: number }) => {
 				if (result.isInBlock || result.isFinalized || result.isError) {
 					resolve({
-						blockNumber: result.blockNumber?.toNumber(),
-						index: result.txIndex,
+						blockNumber: result.blockNumber?.toNumber() ?? 0,
+						index: result.txIndex ?? 0,
 					});
 				}
 			});
 		});
 	}
 
-	async submitKey(account: any, data: any) {
+	async submitKey(account: KeyringPair, data: string) {
 		const { encoded: encryptedKey, ikm } = testCrypt(this._guardianInfo.tauParams, this._guardianInfo.aggKey);
 
 		const td_params = uint8ArrayToBase64(hexToUint8Array(encryptedKey as Hex));
@@ -200,7 +207,7 @@ class MCryptFsWriter {
 			ciphertext: uint8ArrayToBase64(Uint8Array.from(ciphertext)),
 			td_params,
 			group_pk: this._guardianInfo.groupPk,
-			tau_params: this._guardianInfo.tau_params,
+			tau_params: this._guardianInfo.tauParams,
 			chosen_guardians: this._guardianInfo.guardians,
 			blobRef: [blobRef.blockNumber, blobRef.extrinsicIndex],
 		});
@@ -237,8 +244,8 @@ class MCryptFsWriter {
 			const prependedChunk = this.prependMetadata(chunk);
 			const blockInfo = await this.writeChunk(prependedChunk);
 
-			this._blockNumber = (blockInfo as any).blockNumber;
-			this._extrinsicIndex = (blockInfo as any).index;
+			this._blockNumber = blockInfo.blockNumber;
+			this._extrinsicIndex = blockInfo.index;
 			this._progress.iBlocksWritten += chunk.size;
 			this._chunkRefs.push({
 				blockNumber: this._blockNumber,
@@ -251,8 +258,8 @@ class MCryptFsWriter {
 		this._fileKey = (await getFileSHA256(this._file)) as string;
 		const metadataRef = await this.writeMetadata();
 		return await FileFromMetadataRef(this._api, [
-			(metadataRef as any).blockNumber,
-			(metadataRef as any).index,
+			metadataRef.blockNumber,
+			metadataRef.index ?? 0,
 		]);
 	}
 }
@@ -260,9 +267,9 @@ class MCryptFsWriter {
 class MCryptFsReader {
 	_filename;
 	_api;
-	_onChainFile;
+	_onChainFile: MCryptFs;
 
-	constructor(filename: string, mcryptApi: any, onChainFile: any) {
+	constructor(filename: string, mcryptApi: any, onChainFile: MCryptFs) {
 		this._filename = filename;
 		this._api = mcryptApi;
 		this._onChainFile = onChainFile;
@@ -270,6 +277,10 @@ class MCryptFsReader {
 
 	async downloadFile() {
 		const chunks = [];
+
+		if (!this._onChainFile._metadata) {
+			throw new Error("Metadata not loaded");
+		}
 
 		let _blockNumber = this._onChainFile._metadata.startRef[0];
 		let _extIndex = this._onChainFile._metadata.startRef[1];
@@ -304,7 +315,7 @@ class MCryptFsReader {
 	}
 }
 
-const FileFromMetadataRef = async (mcryptApi: any, metadataRef: any) => {
+const FileFromMetadataRef = async (mcryptApi: any, metadataRef: [number, number]) => {
 	const metadata = await getFileMetadata(mcryptApi, metadataRef);
 	return new MCryptFs(mcryptApi, metadataRef, metadata);
 };

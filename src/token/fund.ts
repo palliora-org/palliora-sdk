@@ -1,8 +1,9 @@
 import { getApi, getKeyring, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
 import { formatPaliAmount } from "../utils/token";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function fundAccount(account: any, amountBaseUnits: bigint, address?: string) {
+export async function fundAccount(account: KeyringPair, amountBaseUnits: bigint, address?: string) {
   const addr = address ? address : account.address;
   const keyring = await getKeyring();
   const api = await getApi();

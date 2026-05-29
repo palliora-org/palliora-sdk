@@ -1,8 +1,16 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
 import { formatPaliAmount } from "../utils/token";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function joinGuardian(account: any, prefs: any) {
+export interface GuardianJoinPrefs {
+  compute?: string;
+  fee?: bigint | string | number;
+  standard?: boolean;
+  verifier?: boolean;
+}
+
+export async function joinGuardian(account: KeyringPair, prefs: GuardianJoinPrefs) {
   const api = await getApi();
 
   assert(api, "API not initialized");

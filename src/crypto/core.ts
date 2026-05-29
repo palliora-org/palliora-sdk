@@ -561,7 +561,7 @@ function demoFieldOperations() {
 	console.log("Fp12 inv:", fp12ToHex(fp12_inv));
 }
 
-function hexToFp12(hex: string): any {
+function hexToFp12(hex: string): Fp12 {
 	const c0 = bls.fields.Fp6.create({
 		c0: bls.fields.Fp2.create({
 			c0: BigInt("0x" + reverseEndianess(hex.slice(0, 96))),
@@ -593,7 +593,7 @@ function hexToFp12(hex: string): any {
 	return bls.fields.Fp12.create({ c0, c1 });
 }
 
-function convertToCyclotomic(fp12: any): any {
+function convertToCyclotomic(fp12: Fp12): Fp12 {
 	const p = BigInt(
 		"0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab",
 	); // BLS12-381 prime
@@ -601,7 +601,7 @@ function convertToCyclotomic(fp12: any): any {
 	return bls.fields.Fp12.pow(fp12, exponent);
 }
 
-function fp12ToHex(fp12: any): string {
+function fp12ToHex(fp12: Fp12): string {
 	const c0 = fp12.c0;
 	const c1 = fp12.c1;
 	return [

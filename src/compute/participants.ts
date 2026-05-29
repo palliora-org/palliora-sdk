@@ -1,7 +1,21 @@
 import bs58 from 'bs58';
 import { getApi } from '../chain';
 
-export async function getGuardianParticipants(): Promise<any> {
+export interface GuardianParticipants {
+	nwState: {
+		localPeerId: string | undefined;
+		worker: unknown;
+		currentEra: unknown;
+		guardians: string | null;
+		nextGuardians: string | null;
+		currentIndex: unknown;
+		nextIndex: number;
+	};
+	currentGuardians: unknown[];
+	upcomingGuardians: unknown[];
+}
+
+export async function getGuardianParticipants(): Promise<GuardianParticipants> {
 	const api = await getApi();
 	if (!api) throw new Error('Api not initialized');
 
@@ -12,15 +26,15 @@ export async function getGuardianParticipants(): Promise<any> {
 		const currentIndex = await api.query.guardian.currentIndex();
 		const peerid = await api.rpc.system.localPeerId();
 		const _peerid = bs58.decode((peerid || '').toString());
-		const account = await api.query.guardian.worker(_peerid.slice(0, 32));
+		const account = await api.query.guardian.workerByKey(_peerid.slice(6, 38));
 		const nextIndex = currentIndex ? Number(currentIndex) + 1 : 1;
 
-		const guardiansList = (guardians?.toJSON() || []) as any[];
-		const nextGuardiansList = (nextGuardians?.toJSON() || []) as any[];
+		const guardiansList = (guardians?.toJSON() || []) as string[];
+		const nextGuardiansList = (nextGuardians?.toJSON() || []) as string[];
 
-		const buildDetails = async (list: any[]) => {
+		const buildDetails = async (list: string[]) => {
 			return Promise.all(
-				list.map(async (guardian: any) => {
+				list.map(async (guardian: string) => {
 					const guardianPrefs = await api.query.staking.guardians(guardian);
 					const ledger = await api.query.staking.ledger(guardian);
 					const bonded = await api.query.staking.bonded(guardian);

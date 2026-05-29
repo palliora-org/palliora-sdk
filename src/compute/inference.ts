@@ -6,7 +6,7 @@ export interface InferenceComputeParams {
   /** Raw input data — string will be UTF-8 encoded, Uint8Array used as-is. */
   input: Uint8Array | string;
   /** Guardian account IDs that participate in this compute. */
-  guardians: { peerid: string; address: string }[];
+  guardians: string[];
   /** Fee offered for the compute step in PALI. Defaults to 0. */
   fees?: PaliAmountInput;
   /** Block number deadline for the compute step. Defaults to 0 (no deadline). */
@@ -49,7 +49,7 @@ export async function inferenceCompute(params: InferenceComputeParams) {
   };
 
   const contract = {
-    contract_type: "Active",
+    contract_type: "Active" as const,
     guardians: params.guardians,
     compute: computeStep,
     result_cipher: plaintextCipher,

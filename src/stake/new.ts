@@ -1,9 +1,10 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
 import { formatPaliAmount } from "../utils/token";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
 export async function newStake(
-  account: any,
+  account: KeyringPair,
   amountBaseUnits: bigint,
   rewardDestination: string = "Staked"
 ) {

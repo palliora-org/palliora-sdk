@@ -1,8 +1,13 @@
 import assert from "assert";
 import { getApi, signAndSend } from "./chain";
 import { debugLog } from "./utils/helper";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function setIdentity(account: any, {display = undefined}: any) {
+export interface IdentityFields {
+	display?: string;
+}
+
+export async function setIdentity(account: KeyringPair, { display = undefined }: IdentityFields) {
 	const api = await getApi();
 
 	assert(api, "API not initialized");

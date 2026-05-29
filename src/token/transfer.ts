@@ -1,8 +1,9 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
 import { formatPaliAmount } from "../utils/token";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function transfer(account: any, amountBaseUnits: bigint, address: string) {
+export async function transfer(account: KeyringPair, amountBaseUnits: bigint, address: string) {
   const api = await getApi();
 
   assert(api, "API not initialized");

@@ -6,7 +6,7 @@ export interface DataContractParams {
   /** URL pointing to the data to store. */
   url: string;
   /** Guardian account IDs that participate in this contract. */
-  guardians: { peerid: string; address: string }[];
+  guardians: string[];
   /** Fee offered for the contract in PALI. Defaults to 0. */
   fees?: PaliAmountInput;
   /** Block number deadline. Defaults to 0 (no deadline). */
@@ -53,7 +53,7 @@ export async function dataContract(params: DataContractParams) {
   };
 
   const contract = {
-    contract_type: "Dormant",
+    contract_type: "Dormant" as const,
     guardians: params.guardians,
     pre_check: null,
     compute: computeStep,

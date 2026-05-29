@@ -1,9 +1,10 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
 import { OnChainRef } from "./types";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
 export async function runAgent(
-  account: any,
+  account: KeyringPair,
   agentRef: OnChainRef,
   nonce: Uint8Array,
   ciphertext: Uint8Array,

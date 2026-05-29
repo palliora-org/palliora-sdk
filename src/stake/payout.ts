@@ -1,7 +1,8 @@
 import { getApi, signAndSend } from "../chain";
 import { assert, debugLog } from "../utils";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function payoutStake(account: any, eras: Array<number>, address?: string) {
+export async function payoutStake(account: KeyringPair, eras: Array<number>, address?: string) {
   const api = await getApi();
 
   assert(api, "API not initialized");

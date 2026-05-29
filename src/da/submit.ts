@@ -8,8 +8,9 @@ import {
   uint8ArrayToBase64,
 } from "../utils";
 import { OnChainRef, SubmitTEDataResult } from "./types";
+import type { KeyringPair } from "@polkadot/keyring/types";
 
-export async function submitData(account: any, data: string) {
+export async function submitData(account: KeyringPair, data: string) {
   const api = await getApi();
 
   assert(api, "API not initialized");
@@ -23,9 +24,9 @@ export async function submitData(account: any, data: string) {
 }
 
 export async function submitTEData(
-  account: any,
+  account: KeyringPair,
   data: string,
-  chosenGuardians: any[],
+  chosenGuardians: string[],
   tau_params: string,
   agg_key: string,
   group_pk: string,
@@ -64,9 +65,9 @@ export async function submitTEData(
  * re-deriving the cipher parameters.
  */
 export async function submitTEDataWithCipher(
-  account: any,
+  account: KeyringPair,
   data: string,
-  chosenGuardians: any[],
+  chosenGuardians: string[],
   tau_params: string,
   agg_key: string,
   group_pk: string,
