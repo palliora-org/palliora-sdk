@@ -1,3 +1,4 @@
+import { KeyringPair } from "@polkadot/keyring/types";
 import { getKeyring } from "../chain";
 import { createAgreement } from "../compute";
 import { toAtomicPaliAmount, type PaliAmountInput } from "../utils/token";
@@ -6,9 +7,9 @@ export interface SimpleComputeParams {
   /** Guardian account IDs that participate in this compute. */
   guardians: string[];
   /** Input reference block number from which to read the tx payload. */
-  inputBlockNumber: number;
+  inputBlockNumber?: number;
   /** Input reference extrinsic index within the input block. */
-  inputExtrinsicIndex: number;
+  inputExtrinsicIndex?: number;
   /** Program location as URL. */
   programUrl: string;
   /** Fee offered for the compute step in PALI. Defaults to 0. */
@@ -27,10 +28,7 @@ export interface SimpleComputeParams {
  * - program fetched from URL
  * - no pre/post verification
  */
-export async function simpleCompute(params: SimpleComputeParams) {
-  const keyring = await getKeyring();
-  const account = keyring.getPairs()[0];
-
+export async function simpleCompute(params: SimpleComputeParams, account: KeyringPair) {
   const plaintextCipher = "Plaintext";
   const atomicFees = toAtomicPaliAmount(params.fees ?? "0");
   const computeStep = {
@@ -44,12 +42,7 @@ export async function simpleCompute(params: SimpleComputeParams) {
       },
     },
     fee_function: null,
-    input: {
-      ChainTransaction: {
-        block_number: params.inputBlockNumber,
-        extrinsic_index: params.inputExtrinsicIndex,
-      },
-    },
+    input: null,
     program: {
       Url: {
         url: Array.from(new TextEncoder().encode(params.programUrl)),

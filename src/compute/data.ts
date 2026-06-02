@@ -1,3 +1,4 @@
+import { KeyringPair } from "@polkadot/keyring/types";
 import { getKeyring } from "../chain";
 import { createAgreement } from "../compute";
 import { toAtomicPaliAmount, type PaliAmountInput } from "../utils/token";
@@ -24,10 +25,7 @@ export interface DataContractParams {
  * - No pre-check or post-check verifications
  * - Plain (unencrypted) result
  */
-export async function dataContract(params: DataContractParams) {
-  const keyring = await getKeyring();
-  const account = keyring.getPairs()[0];
-
+export async function dataContract(params: DataContractParams, account: KeyringPair) {
   const plaintextCipher = "Plaintext";
   const atomicFees = toAtomicPaliAmount(params.fees ?? "0");
 

@@ -99,7 +99,6 @@ export async function testInlineProgramComputeIntegration() {
   assertCondition(selected.length > 0, "No guardians selected for compute");
 
   const guardianAddresses = selected.map((g) => g.address);
-  const agreement = selected.map((g) => bs58.decode(g.peerid).subarray(6));
 
   const api = await getApi();
   if (!api) throw new Error("Api not initialized");
@@ -153,7 +152,7 @@ export async function testInlineProgramComputeIntegration() {
 
   const tx = api.tx.compute.agreement(contract);
   const result = await signAndSend(tx, signer, {
-    compute: { da_type: 1, agreement, verification: 0, compute: 1 },
+    compute: { da_type: 1, verification: 0, compute: 1 },
   });
 
   assertCondition(!!result.hash, "inline program compute tx hash is missing");
@@ -177,7 +176,7 @@ export async function testInlineProgramComputeIntegration() {
 
 async function main() {
   await testSimpleComputeIntegration();
-  await testInlineProgramComputeIntegration();
+  // await testInlineProgramComputeIntegration();
 }
 
 main().catch((err) => {

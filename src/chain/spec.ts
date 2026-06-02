@@ -199,7 +199,7 @@ export const API_TYPES = {
 	},
 	DAInput: {
 		_enum: {
-		Null: null,
+		Null: 'Null',
 		Inline: 'DAInputInline',
 		ChainTransaction: 'DAInputChainTransaction',
 		Ipfs: 'DAInputIpfs',
