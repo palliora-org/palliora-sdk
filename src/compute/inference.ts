@@ -1,3 +1,4 @@
+import { KeyringPair } from "@polkadot/keyring/types";
 import { getKeyring } from "../chain";
 import { createAgreement } from "../compute";
 import { toAtomicPaliAmount, type PaliAmountInput } from "../utils/token";
@@ -23,10 +24,7 @@ export interface InferenceComputeParams {
  * - Cipher fields carry zero-value placeholders (unused in the trusted path).
  * - Result is returned in plain (no re-encryption).
  */
-export async function inferenceCompute(params: InferenceComputeParams) {
-  const keyring = await getKeyring();
-  const account = keyring.getPairs()[0];
-
+export async function inferenceCompute(params: InferenceComputeParams, account: KeyringPair) {
   const inputData =
     typeof params.input === "string"
       ? Array.from(new TextEncoder().encode(params.input))

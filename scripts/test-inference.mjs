@@ -52,7 +52,7 @@ async function main() {
     guardians: selected,
     fees: 0.2,
     deadline: 0,
-  });
+  }, signer);
 
   console.log("Inference result:", result);
   console.log("Block:", result.blockNumber, "| Tx index:", result.index, "| Hash:", result.hash);
