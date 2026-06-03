@@ -145,7 +145,7 @@ export const API_TYPES = {
 		pk_bytes: 'Vec<u8>',
 		tau_params: 'Vec<u8>'
 	},
-	ThresholdAlgos: {
+	ThresholdParams: {
 		_enum: {
 		SilentThreshold: 'SilentThresholdParams'
 		}
@@ -156,24 +156,61 @@ export const API_TYPES = {
 	Aes256GcmParams: {
 		nonce: '[u8; 12]'
 	},
-	SymmetricAlgos: {
+	SymmetricParams: {
 		_enum: {
 		ChaCha20Poly1305: 'ChaCha20Poly1305Params',
 		Aes256Gcm: 'Aes256GcmParams'
 		}
 	},
-	CipherSuiteEncrypted: {
-		threshold: 'ThresholdAlgos',
-		symmetric: 'SymmetricAlgos'
+	KdfParams: {
+		_enum: {
+		HkdfSha256: 'Null',
+		HkdfSha512: 'Null'
+		}
+	},
+	Secp256k1Params: {
+		recipient_public_key: 'Vec<u8>',
+		ephemeral_public_key: 'Option<Vec<u8>>',
+		compressed: 'bool',
+		kdf: 'KdfParams',
+		salt: 'Option<Vec<u8>>',
+		info: 'Option<Vec<u8>>'
+	},
+	Ed25519Params: {
+		recipient_public_key: 'Vec<u8>',
+		ephemeral_public_key: 'Option<Vec<u8>>',
+		kdf: 'KdfParams',
+		salt: 'Option<Vec<u8>>',
+		info: 'Option<Vec<u8>>'
+	},
+	AsymmetricParams: {
+		_enum: {
+		Secp256k1: 'Secp256k1Params',
+		Ed25519: 'Ed25519Params'
+		}
+	},
+	ThresholdHybridParams: {
+		threshold_params: 'ThresholdParams',
+		symmetric_params: 'SymmetricParams'
+	},
+	AsymmetricHybridParams: {
+		asymmetric_params: 'AsymmetricParams',
+		symmetric_params: 'SymmetricParams'
 	},
 	CipherSuite: {
 		_enum: {
 		Plaintext: 'Null',
-		Encrypted: 'CipherSuiteEncrypted'
+		ThresholdHybrid: 'ThresholdHybridParams',
+		AsymmetricHybrid: 'AsymmetricHybridParams'
 		}
 	},
 	ConfidentialityLevel: {
-		_enum: ['Trusted', 'TEE', 'FHE', 'SMPC']
+		_enum: {
+		Trusted: 'u32',
+		TEE: 'Null',
+		FHE: 'Null',
+		SMPC: 'Null'
+		}
 	},
 	NativeExecuteDA: {
 		_enum: ['Inference']
@@ -210,16 +247,16 @@ export const API_TYPES = {
 	},
 	ContractType: {
 		_enum: {
-		Dormant: "Dormant",
-		Active: "Active"
+		Dormant: 'Null',
+		Active: 'Null'
 		}
 	},
 	StoreType: {
 		_enum: {
-		Dataset: "Dataset",
-		Model: "Model",
-		Agent: "Agent",
-		Other: "Other"
+		Dataset: 'Null',
+		Model: 'Null',
+		Agent: 'Null',
+		Other: 'Null'
 		}
 	},
 	ComputeMetadata: {

@@ -1,5 +1,13 @@
 import bs58 from "bs58";
-import { configure, inferenceCompute, getGuardianAddress, getKeyring } from "../dist/index.js";
+import {
+  configure,
+  inferenceCompute,
+  fetchAndDecodeExtrinsic,
+  scanForBlockEvent,
+  getGuardianAddress,
+  getKeyring,
+  getApi,
+} from "../dist/index.js";
 
 async function main() {
   // Optional: override endpoint via env
@@ -20,8 +28,8 @@ async function main() {
   if (!guardianEntries.length) throw new Error("No guardians available on-chain");
   console.log("Guardians:", guardianEntries);
 
-  const selected = guardianEntries.slice(0, 3);
-  const model = "llama3.2:latest";
+  const selected = guardianEntries.slice(0, 3).map((g) => g.address);
+  const model = "gemma3:12b";
   const payload = {
     model,
     messages: [
@@ -51,6 +59,66 @@ async function main() {
 
   if (result.agreementId) {
     console.log("Agreement ID:", result.agreementId);
+  }
+
+  const api = await getApi();
+  if (!api) throw new Error("Api not initialized");
+
+  const agreementId = result.agreementId;
+  let nextBlock = result.blockNumber + 1;
+
+  console.log("\nWaiting for compute result...");
+  const match = await scanForBlockEvent(
+    api,
+    {
+      predicate: async (block, _event, phase) => {
+        if (!block || !phase.isApplyExtrinsic) {
+          return false;
+        }
+
+        const extrinsic =
+          block.block.extrinsics[phase.asApplyExtrinsic.toNumber()];
+        if (
+          extrinsic?.method?.section?.toLowerCase() !== "compute" ||
+          extrinsic?.method?.method?.toLowerCase() !== "result"
+        ) {
+          return false;
+        }
+
+        const args = extrinsic.method.args;
+        const emittedAgreementId =
+          "0x" +
+          Array.from(args[0])
+            .map((byte) => ("0" + (byte & 0xff).toString(16)).slice(-2))
+            .join("");
+
+        return emittedAgreementId === agreementId;
+      },
+    },
+    result.blockNumber + 1,
+    0,
+  );
+
+  const block = await match.block();
+  const resultExtrinsic = await fetchAndDecodeExtrinsic(
+    match.blockNumber,
+    match.extrinsicIndex ?? 0,
+  );
+  const args = resultExtrinsic.decoded.method.args;
+  const emittedAgreementId = args.requestId ?? "0x";
+
+  const text = Buffer.from(args.contract.compute.input.Inline.data.slice(2), 'hex');
+  const resultText = new TextDecoder().decode(text);
+  console.log(
+    `\nReceived result for agreement ${emittedAgreementId}: ${resultText}`,
+  );
+
+  try {
+    const parsed = JSON.parse(resultText);
+    console.log("\n[Decrypted JSON result]");
+    console.log(JSON.stringify(parsed, null, 2));
+  } catch {
+    console.log("\n[Decrypted text result]");
   }
 
   process.exit(0);

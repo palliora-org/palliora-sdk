@@ -15,19 +15,50 @@ export interface SilentThresholdParams {
   tau_params: number[];
 }
 
-export type ThresholdAlgos = { SilentThreshold: SilentThresholdParams };
+export type ThresholdParams = { SilentThreshold: SilentThresholdParams };
 
-export type SymmetricAlgos =
+export type SymmetricParams =
   | { ChaCha20Poly1305: { nonce: number[] } }
   | { Aes256Gcm: { nonce: number[] } };
 
-export interface CipherSuiteEncrypted {
-  threshold: ThresholdAlgos;
-  symmetric: SymmetricAlgos;
+export type KdfParams = "HkdfSha256" | "HkdfSha512";
+
+export interface Secp256k1Params {
+  recipient_public_key: number[];
+  ephemeral_public_key?: number[] | null;
+  compressed: boolean;
+  kdf: KdfParams;
+  salt?: number[] | null;
+  info?: number[] | null;
+}
+
+export interface Ed25519Params {
+  recipient_public_key: number[];
+  ephemeral_public_key?: number[] | null;
+  kdf: KdfParams;
+  salt?: number[] | null;
+  info?: number[] | null;
+}
+
+export type AsymmetricParams =
+  | { Secp256k1: Secp256k1Params }
+  | { Ed25519: Ed25519Params };
+
+export interface ThresholdHybridParams {
+  threshold_params: ThresholdParams;
+  symmetric_params: SymmetricParams;
+}
+
+export interface AsymmetricHybridParams {
+  asymmetric_params: AsymmetricParams;
+  symmetric_params: SymmetricParams;
 }
 
 /** Mirrors the on-chain CipherSuite enum from spec.ts. */
-export type CipherSuite = "Plaintext" | { Encrypted: CipherSuiteEncrypted };
+export type CipherSuite =
+  | "Plaintext"
+  | { ThresholdHybrid: ThresholdHybridParams }
+  | { AsymmetricHybrid: AsymmetricHybridParams };
 
 export interface SubmitTEDataResult {
   ref: OnChainRef;

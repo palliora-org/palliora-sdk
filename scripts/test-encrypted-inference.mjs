@@ -26,16 +26,28 @@
 
 import {
   configure,
+  compactFromU8aLim,
+  decrypt,
+  fetchAndDecodeExtrinsic,
+  gen_shared_key,
+  getEncKeyring,
+  getApi,
   getKeyring,
   getGuardianAddress,
   createAgreement,
   createGuardianGroupAndWatch,
+  scanForBlockEvent,
   testCrypt,
   encrypt,
   gen_stretched_key,
   hexToUint8Array,
   toAtomicPaliAmount,
 } from "../dist/index.js";
+
+const nodePub = new Uint8Array([
+  59, 105, 230, 196, 8, 100, 70, 38, 130, 39, 111, 219, 186, 210, 57, 165,
+  111, 140, 13, 131, 164, 215, 122, 37, 45, 249, 91, 214, 223, 246, 93, 208,
+]);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,20 +59,43 @@ function stripHex(h) {
 }
 
 /**
- * Build a CipherSuiteEncrypted object for the on-chain Contract type given the
+ * Build a CipherSuite::ThresholdHybrid object for the on-chain Contract type given the
  * output of a testCrypt call and the 12-byte ChaCha20Poly1305 nonce.
  */
 function buildEncryptedCipher(cyphtxtHex, groupPkHex, tauParamsHex, nonce) {
   return {
-    Encrypted: {
-      threshold: {
+    ThresholdHybrid: {
+      threshold_params: {
         SilentThreshold: {
           td_params: Array.from(hexToUint8Array(stripHex(cyphtxtHex))),
           pk_bytes: Array.from(hexToUint8Array(stripHex(groupPkHex))),
           tau_params: Array.from(hexToUint8Array(stripHex(tauParamsHex))),
         },
       },
-      symmetric: {
+      symmetric_params: {
+        ChaCha20Poly1305: { nonce: Array.from(nonce) },
+      },
+    },
+  };
+}
+
+function buildAsymmetricResultCipher(recipientEd25519PubKey, nonce) {
+  return {
+    AsymmetricHybrid: {
+      asymmetric_params: {
+        Ed25519: {
+          // testChat uses x25519(recipient_priv, node_pub), so we provide recipient material
+          // and pin node public key here for deterministic reverse decryption setup.
+          recipient_public_key: Array.from(
+            recipientEd25519PubKey,
+          ),
+          ephemeral_public_key: Array.from(nodePub),
+          kdf: "HkdfSha256",
+          salt: null,
+          info: null,
+        },
+      },
+      symmetric_params: {
         ChaCha20Poly1305: { nonce: Array.from(nonce) },
       },
     },
@@ -74,17 +109,24 @@ function buildEncryptedCipher(cyphtxtHex, groupPkHex, tauParamsHex, nonce) {
 async function main() {
   // --- 1. Resolve signer ---------------------------------------------------
   const keyring = await getKeyring();
+  const encKeyring = await getEncKeyring();
+  const encAccount = encKeyring.getPairs()[0];
   const account = keyring.getPairs()[0];
+  if (!encAccount) throw new Error("No encryption account in keyring");
   if (!account) throw new Error("No signer account in keyring");
-  console.log("Signer:", account.address);
+  console.log(
+    "Signer:",
+    account.address,
+    "| Encryption key:",
+    encAccount.address,
+  );
 
   // --- 2. Create guardian group and retrieve group parameters --------------
-  const selectedGuardians = (await getGuardianAddress()).slice(0, 3);
+  const selectedGuardians = (await getGuardianAddress()).slice(0, 3).map((g) => g.address);
   if (selectedGuardians.length < 3) throw new Error("Need at least 3 guardians available on-chain");
 
   const groupInfo = await createGuardianGroupAndWatch(account, selectedGuardians, 8);
   const { aggKey: AGG_KEY, groupPk: GROUP_PK, tauParams: TAU_PARAMS, guardians } = groupInfo;
-  console.log("Group created:", groupInfo);
 
   // --- 4. Build the inference payload to encrypt ----------------------------
   const inferencePayload = {
@@ -123,29 +165,19 @@ async function main() {
 
   console.log("\n[Input encryption]");
   console.log("  IKM (hex):", inputIkm);
-  console.log("  Symmetric key (hex):", Buffer.from(inputSymKey).toString("hex"));
   console.log("  Nonce (hex):", Buffer.from(inputNonce).toString("hex"));
   console.log("  Ciphertext length:", inputCiphertext.length, "bytes");
 
-  // --- 6. Derive an independent session key for the result cipher -----------
-  // A fresh testCrypt call produces a new enc_key so the result can be
-  // decrypted independently of the input session key.
-  const { encoded: resultCyphtxt, ikm: resultIkm } = testCrypt(
-    stripHex(TAU_PARAMS),
-    stripHex(AGG_KEY),
-  );
-
-  // Generate a random 12-byte nonce that the node will use when encrypting
-  // the result back to us; we store it here so we can decrypt later.
+  // --- 6. Build result-cipher nonce/material for AsymmetricHybrid -----------
   const resultNonce = new Uint8Array(12);
   globalThis.crypto.getRandomValues(resultNonce);
 
-  const resultSymKey = gen_stretched_key(hexToUint8Array(stripHex(resultIkm)));
-
-  console.log("\n[Result decryption material – keep these to decrypt the response]");
-  console.log("  Result IKM (hex):", resultIkm);
+  console.log("\n[Result decryption material - keep these to decrypt the response]");
+  console.log("  Recipient enc pub (hex):", Buffer.from(encAccount.publicKey).toString("hex"));
+  console.log("  Recipient mont pub (hex):", Buffer.from(encAccount.publicKey).toString("hex"));
+  console.log("  Node pub (hex):", Buffer.from(nodePub).toString("hex"));
   console.log("  Result nonce (hex):", Buffer.from(resultNonce).toString("hex"));
-  console.log("  (use gen_stretched_key + decrypt with ChaCha20Poly1305)");
+  console.log("  (testChat-style: decrypt(ciphertext, gen_shared_key(self_key, node_pub), nonce))");
 
   // --- 7. Build the on-chain Contract ---------------------------------------
   const inputCipher = buildEncryptedCipher(
@@ -154,13 +186,17 @@ async function main() {
     TAU_PARAMS,
     inputNonce,
   );
+  const resultCipher = buildAsymmetricResultCipher(
+    encAccount.publicKey,
+    resultNonce,
+  );
 
   const computeStep = {
     cipher: inputCipher,
     computer_indices: selectedGuardians.map((_, i) => i),
     fees: toAtomicPaliAmount("0.21"), // 0.21 PALI
     deadline: 0,
-    confidentiality: { Trusted: { trust_index: 0 } },
+    confidentiality: { Trusted: 0 },
     fee_function: null,
     program_env: null,
     // Encrypted payload delivered inline — DAInput::Inline
@@ -175,7 +211,7 @@ async function main() {
     pre_check: null,
     compute: computeStep,
     post_check: null,
-    result_cipher: "Plaintext",
+    result_cipher: resultCipher,
   };
 
   // --- 8. Submit and report -------------------------------------------------
@@ -188,6 +224,86 @@ async function main() {
   console.log("  Hash:", result.hash);
   if (result.agreementId) {
     console.log("  Agreement ID:", result.agreementId);
+  }
+
+  if (!result.agreementId) {
+    throw new Error(
+      "Agreement id was not emitted by the submission transaction",
+    );
+  }
+
+  const api = await getApi();
+  if (!api) throw new Error("Api not initialized");
+
+  const selfKey = encAccount.encodePkcs8().slice(16, 48);
+  const agreementId = result.agreementId;
+  let nextBlock = result.blockNumber + 1;
+
+  console.log("\nWaiting for compute result...");
+  const match = await scanForBlockEvent(
+    api,
+    {
+      predicate: async (block, _event, phase) => {
+        if (!block || !phase.isApplyExtrinsic) {
+          return false;
+        }
+
+        const extrinsic =
+          block.block.extrinsics[phase.asApplyExtrinsic.toNumber()];
+        if (
+          extrinsic?.method?.section?.toLowerCase() !== "compute" ||
+          extrinsic?.method?.method?.toLowerCase() !== "result"
+        ) {
+          return false;
+        }
+
+        const args = extrinsic.method.args;
+        const emittedAgreementId =
+          "0x" +
+          Array.from(args[0])
+            .map((byte) => ("0" + (byte & 0xff).toString(16)).slice(-2))
+            .join("");
+
+        return emittedAgreementId === agreementId;
+      },
+    },
+    result.blockNumber + 1,
+    0,
+  );
+
+  const block = await match.block();
+  const resultExtrinsic = await fetchAndDecodeExtrinsic(
+    match.blockNumber,
+    match.extrinsicIndex ?? 0,
+  );
+  const args = resultExtrinsic.decoded.method.args;
+  const emittedAgreementId = args.requestId ?? "0x";
+
+  const ciphertext = Buffer.from(args.contract.compute.input.Inline.data.slice(2), 'hex');
+  const nonce = Buffer.from(args.contract.compute.cipher.AsymmetricHybrid.symmetricParams.ChaCha20Poly1305.nonce.slice(2), 'hex');
+  const sharedKey = gen_shared_key(selfKey, nodePub);
+
+  const decrypted = decrypt(
+    ciphertext,
+    sharedKey,
+    nonce,
+  );
+
+  if (!decrypted) {
+    throw new Error("Failed to decrypt compute result");
+  }
+
+  const resultText = new TextDecoder().decode(decrypted);
+  console.log(
+    `\nReceived result for agreement ${emittedAgreementId}: ${resultText}`,
+  );
+
+  try {
+    const parsed = JSON.parse(resultText);
+    console.log("\n[Decrypted JSON result]");
+    console.log(JSON.stringify(parsed, null, 2));
+  } catch {
+    console.log("\n[Decrypted text result]");
   }
 
   process.exit(0);

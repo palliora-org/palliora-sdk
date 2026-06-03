@@ -11,6 +11,7 @@ import type { ISubmittableResult } from "@polkadot/types/types";
 import type { EventRecord } from "@polkadot/types/interfaces";
 import type { ApiPromise } from "@polkadot/api";
 import type { Header, SignedBlock } from "@polkadot/types/interfaces";
+import { SubmissionReceipt } from "./types";
 
 /** ISubmittableResult extended with the concrete blockNumber present after finalization */
 interface SubmittableResultExtended extends ISubmittableResult {
@@ -128,6 +129,39 @@ export const getGuardianNwParams = async () => {
   }
 };
 
+/**
+ * Fetches the block at `blockHeight`, extracts the extrinsic at
+ * `extrinsicIndex`, and returns both the raw codec object and its human-readable
+ * decoded form.
+ *
+ * Throws if the block cannot be found or the index is out of range.
+ */
+export async function fetchAndDecodeExtrinsic(
+  blockHeight: number,
+  extrinsicIndex: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ raw: any; decoded: Record<string, unknown> }> {
+  const api = await getApi();
+  if (!api) throw new Error("API not initialized");
+
+  const blockHash = await api.rpc.chain.getBlockHash(blockHeight);
+  const signedBlock = await api.rpc.chain.getBlock(blockHash);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const extrinsics: any[] = signedBlock.block.extrinsics;
+  if (extrinsicIndex >= extrinsics.length) {
+    throw new Error(
+      `extrinsic index ${extrinsicIndex} out of range — ` +
+        `block ${blockHeight} has ${extrinsics.length} extrinsics`,
+    );
+  }
+
+  const raw = extrinsics[extrinsicIndex];
+  const decoded = raw.toHuman() as Record<string, unknown>;
+
+  return { raw, decoded };
+}
+
 export type BlockScanFilter =
   | {
       /** Pallet name, e.g. "dataAvailability" (case-insensitive) */
@@ -233,3 +267,143 @@ export const scanForBlockEvent = (
     );
   });
 };
+
+/**
+ * Subscribes to new block headers and scans each block's extrinsics until a
+ * `compute.result` extrinsic matching `requestId` is found.  Resolves with the
+ * {@link SubmissionReceipt} (extrinsic hash, block height, and extrinsic index).
+ *
+ * The result-relay submits the extrinsic asynchronously, so this watcher may
+ * need to observe several blocks before the tx lands.
+ *
+ * @param requestId  - The hex-encoded request ID to match (e.g. "0xabc123…").
+ * @param timeoutMs  - Milliseconds to wait before giving up (default: 10 min).
+ */
+export async function watchForSubmissionReceipt(
+  requestId: string,
+  timeoutMs = 10 * 60 * 1_000,
+): Promise<SubmissionReceipt> {
+  const api = await getApi();
+  if (!api) throw new Error("API not initialized");
+
+  return new Promise<SubmissionReceipt>((resolve, reject) => {
+    let unsubFn: (() => void) | undefined;
+    let settled = false;
+
+    const cleanup = (settleFn: () => void) => {
+      if (settled) return;
+      settled = true;
+      unsubFn?.();
+      settleFn();
+    };
+
+    const timer = setTimeout(
+      () => cleanup(() => reject(new Error(`receipt watch timed out for requestId=${requestId}`))),
+      timeoutMs,
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    api.rpc.chain.subscribeNewHeads(async (header: any) => {
+      if (settled) return;
+      try {
+        const blockNumber: number = header.number.toNumber();
+        const blockHash = header.hash;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const signedBlock: any = await api.rpc.chain.getBlock(blockHash);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const extrinsics: any[] = signedBlock.block.extrinsics;
+
+        for (let i = 0; i < extrinsics.length; i++) {
+          const ext = extrinsics[i];
+          const decoded = ext.toHuman() as Record<string, unknown>;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const method = decoded?.method as any;
+
+          if (
+            String(method?.section ?? '').toLowerCase() === 'compute' &&
+            String(method?.method ?? '').toLowerCase() === 'result'
+          ) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const args = method?.args as any;
+            // The first argument to compute.result is the request ID.
+            const onChainId = String(args?.request_id ?? args?.requestId ?? args?.[0] ?? '');
+
+            if (onChainId === requestId) {
+              clearTimeout(timer);
+              cleanup(() =>
+                resolve({
+                  extrinsicHash: (ext.hash as { toHex(): string }).toHex(),
+                  blockHeight: blockNumber,
+                  extrinsicIndex: i,
+                }),
+              );
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[watchReceipt] block check failed requestId=${requestId}: ${msg}`);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }).then((fn: any) => {
+      if (settled) {
+        // Already resolved/rejected before the subscribe promise returned — unsub now.
+        (fn as () => void)();
+      } else {
+        unsubFn = fn as () => void;
+      }
+    }).catch((err: unknown) => {
+      clearTimeout(timer);
+      cleanup(() => reject(err));
+    });
+  });
+}
+
+/**
+ * Fetches block events at `blockHeight` and returns the request ID from the
+ * `compute.AgreementCreated` event emitted by the extrinsic at `extrinsicIndex`.
+ * Returns `null` if no matching event is found for that extrinsic.
+ */
+export async function getAgreementCreatedRequestId(
+  blockHeight: number,
+  extrinsicIndex: number,
+): Promise<string | null> {
+  const api = await getApi();
+  if (!api) throw new Error("API not initialized");
+
+  const blockHash = await api.rpc.chain.getBlockHash(blockHeight);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const apiAt = await api.at(blockHash);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allEvents = (await apiAt.query.system.events()) as unknown as EventRecord[];
+
+  for (const record of allEvents) {
+    const { phase, event } = record;
+
+    // Only consider events produced by the extrinsic at our index.
+    if (!phase.isApplyExtrinsic || phase.asApplyExtrinsic.toNumber() !== extrinsicIndex) {
+      continue;
+    }
+
+    if (
+      String(event.section ?? '').toLowerCase() !== 'compute' ||
+      String(event.method ?? '').toLowerCase() !== 'agreementcreated'
+    ) {
+      continue;
+    }
+
+    // Decode event data and extract the request ID.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dataHuman = event.data.toHuman() as Record<string, unknown> | unknown[];
+    if (Array.isArray(dataHuman)) {
+      const first = dataHuman[0];
+      if (first != null) return String(first);
+    } else if (dataHuman !== null && typeof dataHuman === 'object') {
+      const id = dataHuman['requestId'] ?? dataHuman['request_id'] ?? dataHuman['id'];
+      if (id != null) return String(id);
+    }
+  }
+
+  return null;
+}

@@ -101,11 +101,7 @@ export async function registerDataAgreement(
     computer_indices: params.guardians.map((_, i) => i),
     fees: params.fees,
     deadline: params.deadline ?? 0,
-    confidentiality: {
-      Trusted: {
-        trust_index: params.trustIndex ?? 0,
-      },
-    },
+    confidentiality: { Trusted: params.trustIndex ?? 0 },
     fee_function: null,
     input: {
       ChainTransaction: {

@@ -42,7 +42,7 @@ export async function inferenceCompute(params: InferenceComputeParams) {
     computer_indices: params.guardians.map((_, i) => i),
     fees: atomicFees,
     deadline: params.deadline ?? 0,
-    confidentiality: { Trusted: { trust_index: 0 } },
+    confidentiality: { Trusted: 0 },
     fee_function: null,
     input: { Inline: { data: inputData } },
     program: { NativeExecute: "Inference" },

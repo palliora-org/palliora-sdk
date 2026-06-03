@@ -96,15 +96,15 @@ export async function submitTEDataWithCipher(
   return {
     ref,
     cipher: {
-      Encrypted: {
-        threshold: {
+        ThresholdHybrid: {
+          threshold_params: {
           SilentThreshold: {
             td_params: Array.from(hexToUint8Array(encryptedKey as Hex)),
             pk_bytes: Array.from(hexToUint8Array(group_pk as Hex)),
             tau_params: Array.from(hexToUint8Array(tau_params as Hex)),
           },
         },
-        symmetric: {
+          symmetric_params: {
           ChaCha20Poly1305: { nonce: Array.from(nonce) },
         },
       },

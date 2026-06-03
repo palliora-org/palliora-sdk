@@ -34,11 +34,7 @@ export async function dataContract(params: DataContractParams, account: KeyringP
     computer_indices: params.guardians.map((_, i) => i),
     fees: atomicFees,
     deadline: params.deadline ?? 0,
-    confidentiality: {
-      Trusted: {
-        trust_index: params.trustIndex ?? 0,
-      },
-    },
+    confidentiality: { Trusted: params.trustIndex ?? 0 },
     fee_function: null,
     input: {
       Url: {

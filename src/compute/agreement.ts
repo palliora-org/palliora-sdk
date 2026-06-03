@@ -90,7 +90,7 @@ export async function createSimpleAgreement() {
       computer_indices: [0, 1, 2],
       fees: toAtomicPaliAmount("0.01") ,
       deadline: 0,
-      confidentiality: { Trusted: { trust_index: 0 } },
+      confidentiality: { Trusted: 0 },
       fee_function: null,
       input: null,
       program: { NativeData: "DaFalse" },
