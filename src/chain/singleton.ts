@@ -19,12 +19,13 @@
  */
 import { ApiPromise, Keyring, WsProvider } from "@polkadot/api";
 import { API_EXTENSIONS, API_RPC, API_TYPES } from "./spec";
-import { provider } from "./wsProvider";
 import { waitReady } from "@polkadot/wasm-crypto";
+import { provider, PALLIORA_WS } from "../config";
 
 // Create singleton instances
 let wsProvider: WsProvider | null = null;
 let api: ApiPromise | null = null;
+let apiUrl: string | null = null;
 let keyring: Keyring | null = null;
 // Separate keyring instance intended for encryption-related keys/usages.
 let encKeyring: Keyring | null = null;
@@ -52,6 +53,15 @@ let apiTeardownInProgress = false;
 export async function getApi(cb?: () => void) {
   if (!provider) return;
 
+  if (api && PALLIORA_WS !== apiUrl) {
+    const staleApi = api;
+    api = null;
+    apiUrl = null;
+    apiListenersAttached = false;
+    apiTeardownInProgress = false;
+    await staleApi.disconnect().catch(() => {});
+  }
+
   if (!api) {
     api = await ApiPromise.create({
       provider,
@@ -59,6 +69,7 @@ export async function getApi(cb?: () => void) {
       types: API_TYPES,
       signedExtensions: API_EXTENSIONS,
     });
+    apiUrl = PALLIORA_WS;
   }
   const isNode = typeof process !== "undefined" && typeof process.exit === "function";
   const isTest = typeof process !== "undefined" && process.env?.NODE_ENV === "test";

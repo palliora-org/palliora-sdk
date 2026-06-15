@@ -1,8 +1,9 @@
-import { getApi, provider, signAndSend } from "./chain";
+import { getApi, signAndSend } from "./chain";
 import bs58 from 'bs58';
 import { debugLog } from "./utils/helper";
 import assert from "assert";
 import type { KeyringPair } from "@polkadot/keyring/types";
+import { provider } from "./config";
 
 export async function rotateAndSetKeys(account: KeyringPair) {
   const api = await getApi();
