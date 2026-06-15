@@ -4,6 +4,8 @@ import { Keyring } from "@polkadot/api";
 import { hexToU8a } from "@polkadot/util";
 import { ed25519PairFromSecret, secp256k1PairFromSeed } from "@polkadot/util-crypto";
 import type { KeyringPair } from "@polkadot/keyring/types";
+import { keccak256 } from "viem";
+import { poseidon1, poseidon2 } from "poseidon-lite";
 
 /**
  * Creates a Substrate account from a private key, seed, or mnemonic.
@@ -16,7 +18,8 @@ export async function createAccount(
   input: string,
   type: AccountSourceType,
   name: string = "default",
-  cryptoType: CryptoType = CryptoType.SR25519
+  cryptoType: CryptoType = CryptoType.SR25519,
+  signedMsg: string = "sign",
 ): Promise<KeyringPair> {
   await waitReady();
   const keyring = new Keyring({ type: cryptoType });
@@ -49,6 +52,12 @@ export async function createAccount(
         cryptoType
       );
       return account;
+    case AccountSourceType.DERIVED:
+      if (!input.startsWith("0x")) {
+        throw new Error("Invalid signature format for derived account. Expected hex string starting with 0x.");
+      }
+      const signKeyBytes = sigToSeed(signedMsg, input as `0x${string}`);
+      return createAccount(signKeyBytes, AccountSourceType.SEED, name, cryptoType);
     default:
       throw new Error("Invalid input type");
   }
@@ -85,4 +94,23 @@ export function pairFromPrivateKeyHex(privateKeyHex: string, cryptoType: CryptoT
     default:
       throw new Error(`Unsupported crypto type: ${cryptoType}`);
   }
+}
+
+function sigToSeed(msg: string, sign: `0x${string}`) {
+  const seed = BigInt(keccak256(sign));
+  const encoder = new TextEncoder();
+
+  const signBytes = encoder.encode(msg);
+  const signHex = Array.from(signBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const SALT_SIGN = poseidon1([BigInt(`0x${signHex}`)]);
+
+  // Convert to 32 bytes (64 hex characters)
+  const signKeyBytes = poseidon2([seed.toString(), SALT_SIGN])
+    .toString(16)
+    .slice(0, 64); // Ensure exactly 64 hex characters (32 bytes)
+
+  return signKeyBytes;
 }

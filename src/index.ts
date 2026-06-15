@@ -17,3 +17,5 @@ export * from "@polkadot/util";
 export * as utilCrypto from "@polkadot/util-crypto";
 export * as wasmCrypto from "@polkadot/wasm-crypto";
 export { ApiPromise, WsProvider, HttpProvider } from "@polkadot/api";
+export { Keyring } from "@polkadot/keyring";
+export type { KeyringPair } from "@polkadot/keyring/types";
