@@ -368,9 +368,31 @@ long-lived contract should name guardians present in both.
 
 ### 4.2 Joining as a guardian
 
-`joinGuardian(account, prefs)` submits `staking.guard` with a `GuardianPrefs`. Note that
-the chain now expects `fee_thresholds` as a list of `(ComputeType, rate)` pairs, one per
-compute type — see §6, this is currently mis-registered in the SDK.
+`joinGuardian(account, prefs)` submits `staking.guard` with a `GuardianPrefs`. The chain
+expects `fee_thresholds` as a list of `(ComputeType, rate)` pairs, one per compute type,
+and `prefs.fee` accepts either shape:
+
+```ts
+// One rate for every compute type named in `compute`
+await joinGuardian(account, { compute: "tee,fhe", fee: 1_500_000_000_000_000_000n });
+//   -> fee_thresholds: [[Tee, 1.5e18], [Fhe, 1.5e18]]
+
+// A rate per compute type
+await joinGuardian(account, {
+  compute: "tee,fhe",
+  fee: { tee: 1_500_000_000_000_000_000n, fhe: 3_000_000_000_000_000_000n },
+});
+//   -> fee_thresholds: [[Tee, 1.5e18], [Fhe, 3e18]]
+
+// No thresholds — accepts any rate for every compute type
+await joinGuardian(account, { compute: "tee", standard: true });
+//   -> fee_thresholds: []
+```
+
+`fee` is in **atomic units**, not PALI — the CLI converts with `tokenToBigint` before
+calling. Pricing a compute type absent from `compute` throws rather than being sent, and
+duplicate types are impossible in either shape: `staking.guard` rejects them with
+`InvalidGuardianPrefs`.
 
 ### 4.3 Guardian groups — and why they are hard to find
 
@@ -461,14 +483,16 @@ and failed still consumed compute and still pays out.
 Verified against the current `dev` branches at the time of writing. These are real
 inconsistencies between the repositories, not documentation gaps.
 
-1. **`joinGuardian`'s fee threshold is silently discarded.** `src/chain/spec.ts` declares
-   `GuardianPrefs.feeThreshold: "u128"`, but extrinsic arguments are encoded from
-   *metadata*, not from `spec.ts` — `api.tx.staking.guard` resolves `prefs` through the
-   metadata lookup id. On the deployed runtime that type has no threshold field at all, so
-   the value is **dropped without any error**; on the `dev` branch it is
-   `fee_thresholds: BoundedVec<(ComputeType, u128), 8>`, which the SDK cannot express.
-   Either way, a threshold passed to `joinGuardian` today does not reach the chain. Fix
-   `spec.ts` and `GuardianJoinPrefs` together, against the runtime you actually target.
+1. **`joinGuardian` now tracks the `dev` runtime, not the deployed one.** `spec.ts` and
+   `GuardianJoinPrefs` were updated together to `fee_thresholds: Vec<(ComputeType, u128)>`,
+   matching `dev`. A runtime predating that change has either a scalar `fee_threshold` or
+   no threshold field at all, and encoding against it fails or silently drops the value —
+   check which runtime you target before debugging a threshold that did not take effect.
+
+   Note that extrinsic arguments are encoded from *metadata*, not from `spec.ts` —
+   `api.tx.staking.guard` resolves `prefs` through the metadata lookup id, so the
+   `GuardianPrefs` entry in `spec.ts` is documentation, and the *shape* `joinGuardian`
+   passes is what actually has to match.
 
    The general rule this illustrates: **entries in `spec.ts` that duplicate a metadata type
    are inert** — metadata wins for everything it describes. Only types reached by *name*

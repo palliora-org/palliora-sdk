@@ -9,6 +9,8 @@ export let DEBUG = env.DEBUG === "true" || false;
 
 export let TX_WAIT_FINALIZATION = env.TX_WAIT_FINALIZATION === "true" || false;
 
+export let COST_ESTIMATOR_URL = env.COST_ESTIMATOR_URL || "http://localhost:4141";
+
 export let provider = new WsProvider(PALLIORA_WS, 10000);
 
 export function configure(opts: {
@@ -16,12 +18,14 @@ export function configure(opts: {
   pallioraRpcUrl?: string;
   debug?: boolean;
   txWaitFinalization?: boolean;
+  costEstimatorUrl?: string;
 }) {
 
   if (opts.pallioraWs !== undefined) PALLIORA_WS = opts.pallioraWs;
   if (opts.pallioraRpcUrl !== undefined) PALLIORA_RPC_URL = opts.pallioraRpcUrl;
   if (opts.debug !== undefined) DEBUG = opts.debug;
   if (opts.txWaitFinalization !== undefined) TX_WAIT_FINALIZATION = opts.txWaitFinalization;
+  if (opts.costEstimatorUrl !== undefined) COST_ESTIMATOR_URL = opts.costEstimatorUrl;
 
   provider = new WsProvider(PALLIORA_WS, 10000);
 }

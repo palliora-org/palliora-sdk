@@ -1,6 +1,7 @@
 export * from "./account";
 export * from "./chain";
 export * from "./compute";
+export * from "./costEstimation";
 export * from "./crypto";
 export * from "./da";
 export * from "./guardian";

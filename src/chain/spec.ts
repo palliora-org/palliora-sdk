@@ -317,13 +317,16 @@ export const API_TYPES = {
 		fhe: "bool",
 		zkp: "bool",
 	},
+	ComputeType: {
+		_enum: ["Trusted", "Tee", "Mpc", "Fhe", "Zkp"],
+	},
 	GuardianPrefs: {
 		pubKey: "[u8; 32]",
 		guardian: "bool",
 		verifier: "bool",
 		compute: "bool",
 		computePrefs: "Option<ComputePrefs>",
-		feeThreshold: "u128",
+		feeThresholds: "Vec<(ComputeType, u128)>",
 	},
 	BlockLengthColumns: "Compact<u32>",
 	BlockLengthRows: "Compact<u32>",
