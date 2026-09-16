@@ -460,7 +460,7 @@ The rules that make results fail:
   `AgreementNotFound`.
 - **The `contract` argument must be re-supplied in full**, matching the original.
 - **`CheckCompute` gates the extrinsic.** `compute.result` is one of a small allowlist of
-  calls permitted to carry a non-default `ComputePayload` (§7); anything else carrying one
+  calls permitted to carry a non-default `ComputePayload` (§8); anything else carrying one
   is rejected as `ForbiddenCompute`.
 
 To observe a result as an application, watch for these events on your contract ID:
@@ -478,7 +478,146 @@ and failed still consumed compute and still pays out.
 
 ---
 
-## 6. Known drift — read before debugging
+## 6. Writing a compute image
+
+This section is for whoever builds the Docker image a contract runs. Everything here is
+enforced by the **orchestrator**, a sidecar every guardian node runs alongside its compute
+node (`compute-core/orchestrator`). It watches the chain, resolves your program and inputs,
+drives the container through `docker_gateway`, and submits the result. You never call it —
+you satisfy its conventions.
+
+### 6.1 How your image is located
+
+`contract.compute.program` decides both *what* runs and *how the image is obtained*. The
+variants are not interchangeable:
+
+| `program` | Image resolution |
+|---|---|
+| `{ Inline: { data } }` | Bytes are UTF-8 decoded into an **image reference** (`"myorg/app:v1.2.3"`) and pulled from a registry. This is the normal path |
+| `{ Url: { url } }` | The URL is fetched and its body written to `<staging>/program/image-<b>-<e>.tar`, then loaded as a **local archive**. The URL must serve a `docker save` tarball, *not* a registry reference |
+| `{ Ipfs: { cid } }` | Same as `Url`, fetched via the configured IPFS gateway |
+| `{ NativeExecute: "Inference" }` | No container at all — routed to Ollama (§6.6) |
+
+A registry reference passed as `Url` will be downloaded as if it were a tarball and fail.
+
+### 6.2 Inputs: `/input`, read-only
+
+Every entry in `contract.compute.input` is resolved to bytes and written to a file before
+your container starts:
+
+```
+/input/<blockHeight>-<extrinsicIndex>-<i>      read-only
+/output/                                        read-write
+```
+
+`<i>` is the zero-based position of the input. A single-input job gets exactly one file.
+The host side lives at `<STAGING_DIR>/<blockHeight>-<extrinsicIndex>/`, and the whole tree
+is deleted once the result is submitted.
+
+Rules worth building around:
+
+- **Do not hard-code the filename.** It embeds the block height and extrinsic index, which
+  you cannot know in advance. List `/input`, sort, and read — this is exactly what the
+  built-in inference path does.
+- **Inputs arrive decrypted.** If `contract.compute.cipher` is not `"Plaintext"`, the
+  orchestrator decrypts before writing. Your container always sees plaintext.
+- **Multi-input encrypted jobs are rejected**, because one `CipherSuite` carries one nonce
+  and it cannot be safely reused across inputs. Multiple inputs are fine when plaintext.
+- All DA variants (`Inline`, `Url`, `Ipfs`, `ChainTransaction`, `ContractId`) are resolved
+  by the orchestrator. Your image only ever sees a file.
+
+### 6.3 Output: **stdout is the result**
+
+This is the single most important rule, and the one most likely to surprise you:
+
+> **The result submitted on-chain is your container's combined stdout + stderr.**
+
+`/output` is mounted read-write, but **nothing reads it.** The orchestrator collects the
+container's logs, and then deletes the entire staging tree — `/output` included. Writing
+your result to a file there means submitting an empty result.
+
+The consequences:
+
+- **stdout and stderr are interleaved** into one stream in chronological order. Anything
+  you log for diagnostics — progress bars, warnings, a stray library banner on stderr —
+  is concatenated into the on-chain result. Emit the result and nothing else; send
+  diagnostics nowhere, or accept that they become part of your output.
+- **Output is read as UTF-8 text.** Binary written to stdout is decoded lossily and
+  corrupted. Base64- or hex-encode anything that is not text.
+- **Keep it small.** The result is embedded *inline* in the `compute.result` extrinsic, so
+  it is bounded by extrinsic and block size limits — far below the gateway's 100 MiB log
+  ceiling. That ceiling protects the host's disk; it is not a budget for your result.
+- **Encryption is applied for you.** If `contract.result_cipher` is not `"Plaintext"`, the
+  orchestrator encrypts your bytes to the requester before submission. Emit plaintext.
+
+### 6.4 Exit codes and execution outcome
+
+Your exit code selects the `ExecutionOutcome` reported on-chain (§5):
+
+| Container ends with | `ExecutionOutcome` |
+|---|---|
+| Exit code `0` | `Success` |
+| Any non-zero exit code | `Failed` |
+| Exceeds its timeout (container is force-removed) | `Terminated` |
+| Orchestrator cannot determine the outcome | `Failed` |
+
+**A failed run still submits a result and is still billed.** Compute time is metered from
+container start regardless of outcome, so a crash costs the requester real money. Exit
+non-zero to signal failure honestly — but note the logs captured up to that point are what
+gets submitted as the result.
+
+### 6.5 What you cannot rely on
+
+Two fields look available from the contract but do not currently reach your container:
+
+- **Environment variables.** `ComputeInfo.programEnv` exists on-chain, but the orchestrator
+  reads `env` from a top-level extrinsic argument that `compute.agreement` does not have.
+  A chain-submitted job therefore runs with **no environment variables** from the contract.
+- **Port publications.** The orchestrator looks for `ports` on the compute step, but
+  `ComputeInfo` has no such field. Ports are reachable only through the orchestrator's
+  direct HTTP job API, not from an on-chain contract.
+
+Design your image to take everything it needs from `/input`.
+
+Also note that `contract.compute.deadline` is documented on-chain as a **block number**
+(§3.3) but is consumed by the orchestrator as a **timeout in seconds**, defaulting to 300
+when zero or absent. Until that is reconciled, treat it as your container's wall-clock
+budget in seconds.
+
+### 6.6 The built-in inference path
+
+`{ NativeExecute: "Inference" }` runs no image of yours. The orchestrator reads the **first**
+input file as a complete OpenAI-compatible `/v1/chat/completions` request body, POSTs it to
+Ollama, and submits the raw JSON response as the result. Supply a full request body as your
+input — not a bare prompt. `"ContractAccess"` is defined on-chain but not implemented by the
+orchestrator; any other `NativeExecute` command is rejected.
+
+### 6.7 Minimal example
+
+```dockerfile
+FROM python:3.12-slim
+COPY main.py /main.py
+ENTRYPOINT ["python", "/main.py"]
+```
+
+```python
+import os, sys, json, base64
+
+input_dir = "/input"
+files = sorted(os.listdir(input_dir))          # never hard-code the filename
+with open(os.path.join(input_dir, files[0]), "rb") as f:
+    payload = f.read()
+
+result = {"length": len(payload), "sha": base64.b64encode(payload[:8]).decode()}
+
+# The result is stdout. Nothing else may be printed - not even to stderr.
+sys.stdout.write(json.dumps(result))
+sys.exit(0)
+```
+
+---
+
+## 7. Known drift — read before debugging
 
 Verified against the current `dev` branches at the time of writing. These are real
 inconsistencies between the repositories, not documentation gaps.
@@ -521,9 +660,24 @@ inconsistencies between the repositories, not documentation gaps.
    on the chain struct but are not set by `simpleCompute`, `inferenceCompute` or
    `dataContract`. Supply them explicitly if you need them.
 
+7. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
+   as a block number and used as one by `compute.invoke`'s expiry check, but the
+   orchestrator reads the same field as a **timeout in seconds** when running a container.
+   At 500ms blocks, a value meant as N blocks (N/2 seconds) becomes an N-second container
+   budget — twice the intended window.
+
+8. **`/output` is a dead mount.** The orchestrator bind-mounts
+   `<staging>/output` at `/output` read-write, then never reads it and deletes the staging
+   tree after submission. The result channel is stdout (§6.3). Either the mount should be
+   removed or it should be collected — as it stands it silently invites data loss.
+
+9. **`programEnv` and ports never reach the container.** The orchestrator sources `env` and
+   `ports` from top-level extrinsic arguments that `compute.agreement` does not define, so
+   the on-chain `ComputeInfo.programEnv` field is inert (§6.5).
+
 ---
 
-## 7. The `ComputePayload` signer option
+## 8. The `ComputePayload` signer option
 
 Several SDK calls pass an `opts` object into `signAndSend` that is neither a normal
 extrinsic argument nor a standard signer option:
@@ -551,14 +705,14 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 
 ---
 
-## 8. Failure reference
+## 9. Failure reference
 
 | Symptom | Cause |
 |---|---|
 | `InsufficientFreeBalance` | `fees` below the floor (§2.2), or free balance below `fees`. Call `estimateMinFee`. |
 | `ZeroComputeRate` | `computeRate` is 0 on an `Active`/`Subscription` contract. Only `Dormant` may be 0. |
 | `AgreementFailed` event, nothing reserved | A guardian rejected the offer — `computeRate` under its threshold (§2.4). |
-| `ForbiddenCompute` | Non-default `ComputePayload` on a call not in the allowlist (§7). |
+| `ForbiddenCompute` | Non-default `ComputePayload` on a call not in the allowlist (§8). |
 | `Invalid: Custom(149)` | `guardians` is empty while `compute.program` is not `"Null"` (§3.2). |
 | `Invalid: Custom(145)` | Duplicate entries in `guardians` (§3.2). |
 | `Invalid: Custom(148)` | A named guardian is not registered/staked (§3.2). |
@@ -570,12 +724,17 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 | `ContractExpired` | Past the contract deadline. |
 | `invoke` returns Ok but nothing runs | Deadline or budget check settled the contract instead (§3.6). |
 | `compute.agreement` hangs, never included, no error | A named guardian has not submitted its `agreement_response`; the tx is parked in the future queue (§2.1). |
+| Result is empty on-chain | The image wrote to `/output`; only stdout is collected (§6.3). |
+| Result contains log noise or banners | stderr is interleaved into stdout (§6.3). |
+| Result is corrupted / mojibake | Binary written to stdout; it is decoded as UTF-8 (§6.3). |
+| Container sees no environment variables | `programEnv` is not plumbed through (§6.5). |
+| Image pull fails for a `Url` program | `Url` expects a `docker save` tarball, not a registry reference (§6.1). |
 | Group info cannot be found | No on-chain storage for groups; you need the creation block+index (§4.3). |
 | API disconnects mid-flow | `getGuardianParticipants` disconnects the shared API on exit (§4.1). |
 
 ---
 
-## 9. Conventions
+## 10. Conventions
 
 - **Amounts.** PALI has 18 decimals. `Fee.amount` and `Fee.computeRate` take *human* PALI
   values (`"1.5"`); `buildFee` converts via `toAtomicPaliAmount`. Everything read back off

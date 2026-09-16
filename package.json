@@ -23,7 +23,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CHAIN-RULES.md",
+    "AGENTS.md",
+    "README.md"
   ],
   "repository": {
     "type": "git",
