@@ -20,6 +20,20 @@ pnpm add @palliora.org/chainsdk
 
 Node.js 18+ is expected.
 
+## Releases
+
+Merging a pull request into `main` publishes a new npm version through GitHub
+Actions using npm trusted publishing (OIDC); it does not use an npm token. Add
+exactly one of these labels to the merged pull request to select the version:
+`patch`, `minor`, `major`, or `version:x.y.z`. The **Publish package to npm**
+workflow can also be run manually from `main`, with a patch, minor, major, or
+custom version.
+
+Before the first release, configure npm's trusted publisher for
+`@palliora.org/chainsdk` with GitHub organization `palliora-org`, repository
+`palliora-sdk`, and workflow filename `publish-npm.yml` (not its path). Permit
+the trusted publisher to run `npm publish` directly.
+
 ## Configuration
 
 The SDK reads these environment variables:
