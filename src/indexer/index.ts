@@ -9,7 +9,7 @@ export * from "./types";
 
 export { getArtefacts, getArtefact, getArtefactAccess, getArtefactContracts, getArtefactsByStoreType, getDatasets, getModels, getAgents, getExecutables } from "./artefacts";
 export { getContracts, getContract, getCompute } from "./contracts";
-export { getContractFlow, getArtefactFlow, deriveContractStatus, buildContractPhases } from "./flow";
+export { getContractFlow, getArtefactFlow, deriveContractStatus, buildContractPhases, normalizeComputes } from "./flow";
 export { getBlocks } from "./blocks";
 export { getCall, getCallMetadata, getCallArgs } from "./calls";
 export { getTransfers } from "./transfers";

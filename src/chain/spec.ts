@@ -268,7 +268,8 @@ export const API_TYPES = {
 		Dataset: 'Null',
 		Model: 'Null',
 		Agent: 'Null',
-		Other: 'Null'
+		Other: 'Null',
+		Executable: 'Null'
 		}
 	},
 	ComputeMetadata: {

@@ -48,19 +48,29 @@ describe("deriveContractStatus", () => {
 describe("buildContractPhases", () => {
   it("marks later phases pending until compute exists", () => {
     const phases = buildContractPhases(AGREEMENT, null);
-    expect(phases).toHaveLength(4);
+    expect(phases).toHaveLength(5);
     expect(phases[0].complete).toBe(true);
     expect(phases[1].pending).toBe(true);
     expect(phases[1].active).toBe(false);
     expect(phases[3].status).toBe("PENDING");
+    expect(phases[4].id).toBe("phase-5");
   });
 
   it("marks phase 3/4 complete when resultTx is present", () => {
     const phases = buildContractPhases(AGREEMENT, COMPUTE);
-    expect(phases[2].status).toBe("RESULT_SUBMITTED");
+    expect(phases[2].status).toBe("1/1 RESULT_SUBMITTED");
     expect(phases[2].complete).toBe(true);
-    expect(phases[3].status).toBe("SETTLED");
-    expect(phases[3].json).toMatchObject({ jobId: "0xjob", computeReward: "0x20" });
+    expect(phases[3].status).toBe("1/1 SETTLED");
+    expect(phases[3].json).toMatchObject({ requestCount: 1, computeReward: "0x20" });
+    expect(phases[4].status).toBe("SETTLED");
+  });
+
+  it("treats multiple compute requests as one session", () => {
+    const second = { ...COMPUTE, jobId: "0xjob2", resultTx: { hash: "0xres2" } };
+    const phases = buildContractPhases(AGREEMENT, [COMPUTE, second]);
+    expect(phases[1].status).toBe("2 SUBMITTED");
+    expect(phases[2].status).toBe("2/2 RESULT_SUBMITTED");
+    expect(phases[4].complete).toBe(true);
   });
 });
 
@@ -82,8 +92,10 @@ describe("getContractFlow", () => {
     expect(data.status).toBe("COMPLETED");
     expect(data.agreement.contractId).toBe("0xc1");
     expect(data.compute?.jobId).toBe("0xjob");
+    expect(data.computes).toHaveLength(1);
     expect(data.phases[0].id).toBe("phase-1");
     expect(data.phases[3].complete).toBe(true);
+    expect(data.phases[4].id).toBe("phase-5");
   });
 
   it("treats a missing compute document as agreement-only", async () => {

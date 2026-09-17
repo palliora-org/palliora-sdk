@@ -48,7 +48,7 @@ export interface DataAgreementMetadata {
   name: string;
   description: string;
   /** Maps to the on-chain StoreType enum. */
-  storeType: "Dataset" | "Model" | "Agent" | "Other";
+  storeType: "Dataset" | "Model" | "Agent" | "Executable" | "Other";
   /** H256 group identifier. */
   groupId: string;
 }

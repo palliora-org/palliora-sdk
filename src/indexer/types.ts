@@ -105,7 +105,7 @@ export interface ComputeDocument {
 export type ContractFlowStatus = "PENDING" | "ACCEPTED" | "PROCESSING" | "COMPLETED";
 
 export interface ContractFlowPhase {
-  id: "phase-1" | "phase-2" | "phase-3" | "phase-4";
+  id: "phase-1" | "phase-2" | "phase-3" | "phase-4" | "phase-5";
   title: string;
   status: string;
   description: string;
@@ -118,7 +118,10 @@ export interface ContractFlowPhase {
 /** Combined compute-contract lifecycle assembled from `/api/contract/:id` + `/api/compute/:id`. */
 export interface ContractFlow {
   agreement: ContractDocument;
+  /** Latest compute request, if any. Prefer {@link ContractFlow.computes} for session flows. */
   compute: ComputeDocument | null;
+  /** Every compute request on this agreement, oldest first. */
+  computes: ComputeDocument[];
   status: ContractFlowStatus;
   phases: ContractFlowPhase[];
 }

@@ -79,7 +79,7 @@ export interface UploadOptions {
   name: string;
   description: string;
   price: PaliAmountInput;
-  type: "model" | "dataset" | "agent";
+  type: "model" | "dataset" | "agent" | "executable";
   guardianGroupInfo: GuardianGroupInfo;
   ref?: string;
   filePath?: string;
