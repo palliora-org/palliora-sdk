@@ -347,6 +347,24 @@ different contract.
 Read a contract back with `api.query.compute.contracts(contractId)` — status, owner,
 `origin_block`, `invocation_block`, `usage_price`, `contract_type`.
 
+**`origin_block` is zero on a `Dormant` contract.** The pallet sets it only for `Active`
+and `Subscription`, because the field doubles as the settlement clock and a `Dormant`
+contract never settles. `index` is zero on every contract type. So neither field tells you
+where a registered artifact lives — which matters, because a `ContractId` reference points
+at exactly the contracts that lack it. The registration block survives in the deadline
+instead:
+
+```ts
+// ContractDeadlines[id] = registration_block + ContractDeadlineDuration,
+// and a Dormant contract never settles, so the entry is never cleared.
+const deadline = await api.query.compute.contractDeadlines(contractId);
+const duration = await api.query.compute.contractDeadlineDuration();
+const registrationBlock = BigInt(deadline.toString()) - BigInt(duration.toString());
+```
+
+This is a derivation, not a record: it is wrong if root changed
+`ContractDeadlineDuration` between registration and lookup.
+
 ---
 
 ## 4. Guardians
