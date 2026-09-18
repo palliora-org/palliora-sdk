@@ -22,6 +22,7 @@ guardian rate thresholds and the two-transaction group protocol are invisible fr
 | `src/compute/` | `compute.agreement` wrappers, fee estimation (`fees.ts`), inference and data contracts |
 | `src/guardian/` | Guardian list, join, and group creation/reconstruction |
 | `src/da/` | Data availability: submit, upload, register |
+| `src/storage/` | Off-chain artifact storage: provider router and S3 pre-signed upload flow |
 | `src/stake/`, `src/token/`, `src/validator/`, `src/account/` | Staking, transfers, validator and identity operations |
 | `src/crypto/` | Hybrid and threshold encryption helpers |
 | `src/costEstimation/` | Client for the offchain cost-estimation / rate-quote oracle |
