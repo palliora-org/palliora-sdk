@@ -6,6 +6,7 @@ export * from "./crypto";
 export * from "./da";
 export * from "./guardian";
 export * from "./stake";
+export * from "./storage";
 export * from "./token";
 export * from "./utils/helper";
 export * from "./utils/token";

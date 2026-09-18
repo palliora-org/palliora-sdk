@@ -5,3 +5,4 @@ export * from './encryptedInference';
 export * from './inference';
 export * from './participants';
 export * from './simple';
+export * from './stored';

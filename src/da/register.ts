@@ -1,9 +1,10 @@
 import { getApi, signAndSend } from "../chain";
-import { createAgreement, buildFee } from "../compute";
+import { createAgreement, buildFee, buildComputeMetadata } from "../compute";
 import { assert, debugLog } from "../utils";
 import { formatPaliAmount, toAtomicPaliAmount } from "../utils/token";
 import { CipherSuite, OnChainRef } from "./types";
 import type { Fee } from "../chain/types";
+import type { ComputeMetadataInput } from "../compute/agreement";
 import type { KeyringPair } from "@polkadot/keyring/types";
 
 export async function writeMetadata(
@@ -44,14 +45,14 @@ export async function writeMetadata(
   return hash;
 }
 
-export interface DataAgreementMetadata {
-  name: string;
-  description: string;
-  /** Maps to the on-chain StoreType enum. */
-  storeType: "Dataset" | "Model" | "Agent" | "Other";
+/**
+ * Metadata for a registered DA blob. The `storeType` union lives in
+ * `compute/agreement.ts` so there is one copy to keep in step with the pallet.
+ */
+export type DataAgreementMetadata = ComputeMetadataInput & {
   /** H256 group identifier. */
   groupId: string;
-}
+};
 
 export interface DataAgreementParams {
   /** DA blob reference returned by submitTEData. */
@@ -90,15 +91,7 @@ export async function registerDataAgreement(
 
   const cipher = params.cipher ?? "Plaintext";
   const resultCipher = params.resultCipher ?? "Plaintext";
-  const encoder = new TextEncoder();
-  const computeMetadata = params.metadata
-    ? {
-        name: Array.from(encoder.encode(params.metadata.name)),
-        description: Array.from(encoder.encode(params.metadata.description)),
-        storeType: params.metadata.storeType,
-        groupId: params.metadata.groupId,
-      }
-    : null;
+  const computeMetadata = buildComputeMetadata(params.metadata);
 
   const computeStep = {
     cipher,

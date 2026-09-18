@@ -18,6 +18,51 @@ export function buildFee(fee?: Fee) {
   };
 }
 
+/** Zero `H256` — the `groupId` of a contract that belongs to no guardian group. */
+export const NO_GUARDIAN_GROUP = `0x${"00".repeat(32)}`;
+
+/**
+ * Classification carried in `ComputeMetadata.storeType`.
+ *
+ * Mirrors `pallet_compute::StoreType` variant-for-variant, and order is the
+ * encoding: the variant index is what goes on the wire, so an omitted variant
+ * silently shifts every one after it.
+ */
+export type StoreType = "Dataset" | "Model" | "Agent" | "Executable" | "Other";
+
+export interface ComputeMetadataInput {
+  /** Human-readable name of the registered artifact. */
+  name: string;
+  /** Human-readable description of the registered artifact. */
+  description: string;
+  /** What kind of artifact this is. */
+  storeType: StoreType;
+  /**
+   * H256 of the guardian group this entry belongs to. Defaults to
+   * {@link NO_GUARDIAN_GROUP} — correct for plaintext contracts, which have no
+   * group. The chain stores this field but never reads it.
+   */
+  groupId?: string;
+}
+
+/**
+ * Converts a {@link ComputeMetadataInput} into the on-chain `ComputeMetadata`,
+ * whose `name` and `description` are byte vectors rather than strings.
+ * Returns `null` for absent metadata, which is what `Option<ComputeMetadata>`
+ * expects.
+ */
+export function buildComputeMetadata(metadata?: ComputeMetadataInput) {
+  if (!metadata) return null;
+
+  const encoder = new TextEncoder();
+  return {
+    name: Array.from(encoder.encode(metadata.name)),
+    description: Array.from(encoder.encode(metadata.description)),
+    storeType: metadata.storeType,
+    groupId: metadata.groupId ?? NO_GUARDIAN_GROUP,
+  };
+}
+
 export interface ComputeContract {
   contractType: "Active" | "Dormant";
   guardians: GuardianAddress[];
