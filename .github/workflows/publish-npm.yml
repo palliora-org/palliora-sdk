@@ -1,0 +1,181 @@
+name: Publish package to npm
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version bump to publish
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: Exact version to publish when version is custom, e.g. 1.4.3
+        required: false
+        type: string
+
+# `id-token: write` lets npm verify this workflow using GitHub's OIDC token.
+# No npm access token is required or read by this workflow.
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: npm-publish-main
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, version, and publish
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          # Node 24 includes an npm version that supports npm trusted publishing.
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - name: Print tool versions
+        run: |
+          node --version
+          npm --version
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Sync main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git rebase origin/main
+
+      - name: Determine version bump
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+          WORKFLOW_INPUT_CUSTOM_VERSION: ${{ github.event.inputs.custom_version || '' }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$WORKFLOW_INPUT_VERSION" ]; then
+            if [ "$WORKFLOW_INPUT_VERSION" = "custom" ]; then
+              if ! [[ "$WORKFLOW_INPUT_CUSTOM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+                echo "::error::custom_version must be valid semver, such as 1.4.3."
+                exit 1
+              fi
+              version_bump="$WORKFLOW_INPUT_CUSTOM_VERSION"
+            else
+              version_bump="$WORKFLOW_INPUT_VERSION"
+            fi
+          else
+            prs_json="$(
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls"
+            )"
+
+            pr_count="$(jq 'length' <<< "$prs_json")"
+            if [ "$pr_count" -eq 0 ]; then
+              echo "::error::No pull request was found for $GITHUB_SHA. Add exactly one release label to the merged PR: patch, minor, major, or version:x.y.z."
+              exit 1
+            fi
+
+            bump_labels="$(
+              jq -r '
+                .[0].labels[].name
+                | ascii_downcase
+                | select(. == "patch" or . == "minor" or . == "major" or . == "release:patch" or . == "release:minor" or . == "release:major")
+                | sub("^release:"; "")
+              ' <<< "$prs_json" | sort -u
+            )"
+            version_labels="$(
+              jq -r '
+                .[0].labels[].name
+                | ascii_downcase
+                | capture("^(version|release):(?<version>[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9a-z.-]+)?(\\+[0-9a-z.-]+)?)$")
+                | .version
+              ' <<< "$prs_json" | sort -u
+            )"
+
+            bump_label_count="$(printf '%s\n' "$bump_labels" | sed '/^$/d' | wc -l | tr -d ' ')"
+            version_label_count="$(printf '%s\n' "$version_labels" | sed '/^$/d' | wc -l | tr -d ' ')"
+            label_count="$((bump_label_count + version_label_count))"
+
+            if [ "$label_count" -ne 1 ]; then
+              pr_url="$(jq -r '.[0].html_url' <<< "$prs_json")"
+              echo "::error::PR $pr_url must have exactly one release label: patch, minor, major, or version:x.y.z."
+              exit 1
+            fi
+
+            if [ "$version_label_count" -eq 1 ]; then
+              version_bump="$version_labels"
+            else
+              version_bump="$bump_labels"
+            fi
+          fi
+
+          echo "version_bump=$version_bump" >> "$GITHUB_OUTPUT"
+          echo "Using $version_bump version bump."
+
+      - name: Bump package version
+        id: version
+        env:
+          VERSION_BUMP: ${{ steps.release.outputs.version_bump }}
+        run: |
+          set -euo pipefail
+          npm version "$VERSION_BUMP" --no-git-tag-version --ignore-scripts
+
+          if git diff --quiet -- package.json; then
+            echo "::error::The requested version does not change package.json."
+            exit 1
+          fi
+
+          echo "package=$(node -p \"require('./package.json').name + '@' + require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit --no-verify -m "chore: bump package version [skip ci]"
+          git push origin HEAD:main
+
+      - name: Publish to npm with trusted publishing
+        env:
+          # Prevent an accidentally configured token from bypassing OIDC.
+          NPM_TOKEN: ""
+          NODE_AUTH_TOKEN: ""
+        run: |
+          set -euo pipefail
+          npm publish --access public --ignore-scripts
+
+      - name: Report published package
+        env:
+          PACKAGE: ${{ steps.version.outputs.package }}
+        run: echo "Published $PACKAGE"

@@ -1,3 +1,9 @@
+> **Building a compute application? Read [CHAIN-RULES.md](CHAIN-RULES.md) first.**
+> This README covers *which function to call*. CHAIN-RULES.md covers what the chain does
+> with the call — the fee floor, guardian rate thresholds, contract lifecycles, guardian
+> groups, and why a correctly-shaped transaction still gets rejected. None of that is
+> visible from the TypeScript signatures.
+
 ## What this SDK provides
 
 - API initialization helpers for Palliora.
@@ -10,10 +16,24 @@
 ## Install
 
 ```bash
-pnpm add @palliora/chainsdk
+pnpm add @palliora.org/chainsdk
 ```
 
 Node.js 18+ is expected.
+
+## Releases
+
+Merging a pull request into `main` publishes a new npm version through GitHub
+Actions using npm trusted publishing (OIDC); it does not use an npm token. Add
+exactly one of these labels to the merged pull request to select the version:
+`patch`, `minor`, `major`, or `version:x.y.z`. The **Publish package to npm**
+workflow can also be run manually from `main`, with a patch, minor, major, or
+custom version.
+
+Before the first release, configure npm's trusted publisher for
+`@palliora.org/chainsdk` with GitHub organization `palliora-org`, repository
+`palliora-sdk`, and workflow filename `publish-npm.yml` (not its path). Permit
+the trusted publisher to run `npm publish` directly.
 
 ## Configuration
 
@@ -48,7 +68,7 @@ import {
 	submitData,
 	newStake,
 	transfer,
-} from "@palliora/chainsdk";
+} from "@palliora.org/chainsdk";
 
 async function main() {
 	const keyring = await getKeyring();
@@ -82,7 +102,7 @@ Use these when you want a broader integration and may combine SDK wrappers with 
 ### Default initialization
 
 ```ts
-import { getApi, getKeyring } from "@palliora/chainsdk";
+import { getApi, getKeyring } from "@palliora.org/chainsdk";
 
 const api = await getApi();
 const keyring = await getKeyring();
@@ -104,7 +124,7 @@ import {
 	getGuardianList,
 	createGuardianGroup,
 	joinGuardian,
-} from "@palliora/chainsdk";
+} from "@palliora.org/chainsdk";
 
 const guardians = await getGuardianList();
 
@@ -114,6 +134,10 @@ await joinGuardian(account, {
 	standard: true,
 	verifier: true,
 	compute: "trusted,tee",
+	// Minimum rate to take work at, in atomic units. A single amount prices every
+	// compute type above; pass a record to price them separately. Omit to accept
+	// any rate.
+	fee: { trusted: 1_000_000_000_000_000_000n, tee: 2_500_000_000_000_000_000n },
 });
 ```
 
@@ -126,7 +150,7 @@ Main guardian exports:
 ### Data availability
 
 ```ts
-import { submitData } from "@palliora/chainsdk";
+import { submitData } from "@palliora.org/chainsdk";
 
 await submitData(account, "payload to store on Palliora DA");
 ```
@@ -137,18 +161,51 @@ Main DA export:
 
 ### Compute
 
+Before offering a fee, check the floor the chain enforces — see
+[CHAIN-RULES.md §2](CHAIN-RULES.md) for what the components mean.
+
 ```ts
-import { createAgreement, getGuardianParticipants } from "@palliora/chainsdk";
+import {
+	createAgreement,
+	estimateMinFee,
+	buildFee,
+	fromAtomicPaliAmount,
+	getGuardianList,
+} from "@palliora.org/chainsdk";
 
-await createAgreement();
+const guardians = (await getGuardianList()).slice(0, 3);
+const computeRate = "0.000000001";
 
-const participants = await getGuardianParticipants();
-console.log(participants);
+// The smallest `fees` this contract may offer. Offer more to buy more compute time.
+const { minFee } = await estimateMinFee({ computeRate });
+
+await createAgreement(
+	{
+		contractType: "Active",
+		guardians,
+		compute: {
+			cipher: "Plaintext",
+			computerIndices: guardians.map((_, i) => i),
+			...buildFee({ amount: fromAtomicPaliAmount(minFee), computeRate }),
+			deadline: 0,
+			confidentiality: { Trusted: 0 },
+			feeFunction: null,
+			input: { Inline: { data: [...new TextEncoder().encode("hello")] } },
+			program: { NativeExecute: "Inference" },
+		},
+		resultCipher: "Plaintext",
+	},
+	account,
+);
 ```
 
 Main compute exports:
 
-- `createAgreement()`
+- `createAgreement(contract, account, oracleQuoteId?)`
+- `invokeAgreement(agreementId, input, account, opts?)` — `Subscription` contracts only
+- `estimateMinFee({ computeRate, inputContractId? })` — the fee floor plus its breakdown
+- `getFeeParams()` — the four live chain parameters the floor derives from
+- `inferenceCompute`, `simpleCompute`, `dataContract`, `encryptedInferenceCompute`
 
 ### Stake
 
@@ -161,7 +218,7 @@ import {
 	removeStake,
 	withdrawStake,
 	tokenToBigint,
-} from "@palliora/chainsdk";
+} from "@palliora.org/chainsdk";
 
 const amount = tokenToBigint(100);
 
@@ -186,7 +243,7 @@ Main stake exports:
 ### Token
 
 ```ts
-import { fundAccount, transfer, tokenToBigint } from "@palliora/chainsdk";
+import { fundAccount, transfer, tokenToBigint } from "@palliora.org/chainsdk";
 
 await fundAccount(account, tokenToBigint(50));
 await transfer(account, tokenToBigint(10), "5F3sa2TJAWMqDhXG6jhV4N8ko9qQ7x7T9nM8uA8V2sR8hF4M");
@@ -223,7 +280,7 @@ import {
 	gen_stretched_key,
 	encrypt,
 	decrypt,
-} from "@palliora/chainsdk";
+} from "@palliora.org/chainsdk";
 
 const shared = gen_shared_key(mySecretKeyBytes, peerPublicKeyBytes);
 const key = gen_stretched_key(shared);

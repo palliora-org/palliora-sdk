@@ -113,12 +113,10 @@ export const createGuardianGroupAndWatch = async (
 async function findGuardianGroupInfoExtrinsic(
   api: ApiPromise,
   startBlock: number,
-  maxBlocks: number = 20,
+  maxBlocks: number
 ): Promise<OnChainRef> {
-  assert(maxBlocks > 0, "maxBlocks must be greater than 0");
-
   const tip = (await api.rpc.chain.getHeader()).number.toNumber();
-  const endBlock = Math.min(startBlock + maxBlocks - 1, tip);
+  const endBlock = maxBlocks > 0 ? Math.min(startBlock + maxBlocks - 1, tip) : tip;
 
   for (let blockNumber = startBlock; blockNumber <= endBlock; blockNumber++) {
     const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
