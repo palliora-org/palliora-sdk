@@ -268,6 +268,7 @@ export const API_TYPES = {
 		Dataset: 'Null',
 		Model: 'Null',
 		Agent: 'Null',
+		Executable: 'Null',
 		Other: 'Null'
 		}
 	},
