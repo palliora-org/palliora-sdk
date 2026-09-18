@@ -125,7 +125,7 @@ async function main() {
   const selectedGuardians = (await getGuardianAddress()).slice(0, 3).map((g) => g.address);
   if (selectedGuardians.length < 3) throw new Error("Need at least 3 guardians available on-chain");
 
-  const groupInfo = await createGuardianGroupAndWatch(account, selectedGuardians, 8);
+  const groupInfo = await createGuardianGroupAndWatch(account, selectedGuardians, 80);
   const { aggKey: AGG_KEY, groupPk: GROUP_PK, tauParams: TAU_PARAMS, guardians } = groupInfo;
 
   // --- 4. Build the inference payload to encrypt ----------------------------
