@@ -1,4 +1,4 @@
-import { configure, runAgent, getKeyring } from "../dist/index.js";
+import { init, runAgent, getKeyring } from "../dist/index.js";
 import { decodeAddress, encodeAddress } from '@polkadot/util-crypto';
 
 // Helper: decode a 0x-prefixed hex string into a Uint8Array
@@ -18,11 +18,10 @@ async function main() {
   console.log(encodeAddress('0x900a0247c7b213d6ecab8af151e1a5c45da71eb490b82428e1367dcbc9ea1344', 42));
   console.log(encodeAddress('0xbc800b0b703516e849466b97b74c899803b8b1f08d85ec09a351fc156459b552', 42));
   return;
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: true });
-  } else {
-    configure({ debug: true });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: true,
+  });
 
   const keyring = await getKeyring();
   const signer = keyring.getPairs()[0];

@@ -53,7 +53,7 @@
  */
 
 import {
-  configure,
+  init,
   getApi,
   getKeyring,
   getEncKeyring,
@@ -261,14 +261,11 @@ async function fetchConfirmedAuctionForGuardian(guardianAddress) {
 async function main() {
   // Fail fast on missing required input, before any of the expensive on-chain work
   // below (guardian group creation, the actual submission) has a chance to run.
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: true });
-  } else {
-    configure({ debug: true });
-  }
-  if (process.env.COST_ESTIMATOR_URL) {
-    configure({ costEstimatorUrl: process.env.COST_ESTIMATOR_URL });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    costEstimatorUrl: process.env.COST_ESTIMATOR_URL ?? "http://localhost:4141",
+    debug: true,
+  });
 
   // --- 1. Resolve signer -----------------------------------------------------
   const keyring = await getKeyring();

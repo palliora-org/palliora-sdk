@@ -25,7 +25,7 @@
  */
 
 import {
-  configure,
+  init,
   compactFromU8aLim,
   decrypt,
   fetchAndDecodeExtrinsic,

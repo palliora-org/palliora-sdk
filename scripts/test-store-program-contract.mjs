@@ -20,7 +20,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
-  configure,
+  init,
   dataContract,
   disconnectApi,
   getApi,
@@ -58,8 +58,8 @@ async function selectGuardians() {
 }
 
 export async function storeProgramContract(tarPath = DEFAULT_TAR) {
-  configure({
-    ...(process.env.PALLIORA_WS ? { pallioraWs: process.env.PALLIORA_WS } : {}),
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
     debug: true,
   });
 
