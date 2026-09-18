@@ -1,10 +1,10 @@
+import { StoreType } from "../compute";
 import type { IndexerClient } from "./client";
 import type {
   ArtefactDocument,
   ArtefactsQuery,
   ArtefactAccessQuery,
   ArtefactContractsQuery,
-  StoreType,
   SuccessResponse,
 } from "./types";
 

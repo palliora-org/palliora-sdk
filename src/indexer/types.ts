@@ -2,6 +2,8 @@
 // @statescan/indexer REST API — TypeScript type definitions
 // ---------------------------------------------------------------------------
 
+import { StoreType } from "../compute";
+
 /** Common `indexer` subdocument present on most indexed documents. */
 export interface IndexerMeta {
   blockHeight: number;
@@ -12,12 +14,6 @@ export interface IndexerMeta {
 }
 
 // ── Artefacts ───────────────────────────────────────────────────────────────
-
-/**
- * Values of the `storeType` field used to categorize artefacts/contracts in the UI.
- * Live indexer data uses these exact strings (not the older `artefactType` names).
- */
-export type StoreType = "Dataset" | "Model" | "Agent" | "Executable" | "Other";
 
 /** @deprecated Prefer {@link StoreType}. Kept for backward compatibility. */
 export type ArtefactType = StoreType | "Data";
