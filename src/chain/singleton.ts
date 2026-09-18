@@ -20,7 +20,7 @@
 import { ApiPromise, Keyring, WsProvider } from "@polkadot/api";
 import { API_EXTENSIONS, API_RPC, API_TYPES } from "./spec";
 import { waitReady } from "@polkadot/wasm-crypto";
-import { provider, PALLIORA_WS } from "../config";
+import { getProvider, getPallioraWs } from "../config";
 
 // Create singleton instances
 let wsProvider: WsProvider | null = null;
@@ -38,8 +38,8 @@ let apiTeardownInProgress = false;
  * Returns the singleton {@link ApiPromise} instance, creating it if necessary.
  *
  * @remarks
- * - If no underlying `provider` is configured (the module-level `provider`
- *   imported from "./wsProvider"), this function returns `undefined`.
+ * - Throws if the SDK has not been initialized with a `pallioraWs` endpoint
+ *   (see `init` in "../config").
  * - When creating the API, the configured `rpc`, `types` and `signedExtensions`
  *   are applied.
  * - In non-test environments, top-level API `error` and `disconnected` events
@@ -48,12 +48,12 @@ let apiTeardownInProgress = false;
  *
  * @param cb - Optional callback function to attach to the "disconnected" event.
  *
- * @returns The singleton {@link ApiPromise} instance (or `undefined` if no provider).
+ * @returns The singleton {@link ApiPromise} instance.
  */
 export async function getApi(cb?: () => void) {
-  if (!provider) return;
+  const pallioraWs = getPallioraWs();
 
-  if (api && PALLIORA_WS !== apiUrl) {
+  if (api && pallioraWs !== apiUrl) {
     const staleApi = api;
     api = null;
     apiUrl = null;
@@ -64,12 +64,12 @@ export async function getApi(cb?: () => void) {
 
   if (!api) {
     api = await ApiPromise.create({
-      provider,
+      provider: getProvider(),
       rpc: API_RPC,
       types: API_TYPES,
       signedExtensions: API_EXTENSIONS,
     });
-    apiUrl = PALLIORA_WS;
+    apiUrl = pallioraWs;
   }
   const isNode = typeof process !== "undefined" && typeof process.exit === "function";
   const isTest = typeof process !== "undefined" && process.env?.NODE_ENV === "test";

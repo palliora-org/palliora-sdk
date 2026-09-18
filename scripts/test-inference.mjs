@@ -1,6 +1,6 @@
 import bs58 from "bs58";
 import {
-  configure,
+  init,
   inferenceCompute,
   fetchAndDecodeExtrinsic,
   scanForBlockEvent,
@@ -11,11 +11,10 @@ import {
 
 async function main() {
   // Optional: override endpoint via env
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: true });
-  } else {
-    configure({ debug: true });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: true,
+  });
 
   // Verify keyring is reachable
   const keyring = await getKeyring();

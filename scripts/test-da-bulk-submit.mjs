@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import {
-  configure,
+  init,
   getApi,
   getKeyring,
   signAndSend,
@@ -18,11 +18,10 @@ function generateUniqueData() {
 }
 
 async function main() {
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: true });
-  } else {
-    configure({ debug: true });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: true,
+  });
 
   const keyring = await getKeyring();
   const signer = keyring.getPairs()[0];

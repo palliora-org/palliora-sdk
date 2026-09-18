@@ -27,7 +27,7 @@ export async function uploadData(options: UploadOptions) {
     throw new Error("uploadData: file path upload is not implemented");
   } else {
     const storeType =
-      type === "model" ? "Model" : type === "agent" ? "Agent" : "Dataset";
+      type === "model" ? "Model" : type === "agent" ? "Agent" : type === "executable" ? "Executable" : "Dataset";
     const { ref: dataRef, cipher } = await submitTEDataWithCipher(
       account,
       ref || "",
@@ -106,7 +106,7 @@ export async function uploadDataLegacy(options: Omit<UploadOptions, "opts">) {
       guardianGroupInfo.groupPk,
     );
 
-    const dtype = type === "model" ? 1 : type === "agent" ? 2 : 0;
+    const dtype = type === "model" ? 1 : type === "agent" ? 2 : type === "executable" ? 4 : 0;
     await writeMetadata(
       account,
       name,

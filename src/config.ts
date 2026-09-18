@@ -1,43 +1,109 @@
 import { WsProvider } from "@polkadot/api";
 
-const env = typeof process !== "undefined" && process.env ? process.env : {} as Record<string, string | undefined>;
+/** Values the host application must supply through {@link init}. */
+export interface PallioraConfig {
+  /** WebSocket endpoint used for the chain API connection. */
+  pallioraWs: string;
+  /** RPC endpoint, when it differs from {@link PallioraConfig.pallioraWs}. */
+  pallioraRpcUrl: string;
+  /** Base URL of the cost-estimation service. */
+  costEstimatorUrl: string;
+  /** Base URL of the auth service that issues S3 pre-signed URLs. */
+  authServiceUrl: string;
+  /** AWS region of the artifact storage bucket. */
+  awsRegion: string;
+  /** Name of the artifact storage bucket. */
+  awsS3Bucket: string;
+  /** Enables debug logging. Defaults to `false`. */
+  debug: boolean;
+  /** Waits for finalization instead of returning once a tx is in-block. Defaults to `false`. */
+  txWaitFinalization: boolean;
+}
 
-export let PALLIORA_WS = env.PALLIORA_WS || "wss://manas-rpc.palliora.org";
-export let PALLIORA_RPC_URL = env.PALLIORA_RPC_URL || "wss://manas-rpc.palliora.org";
+type RequiredKey = Exclude<keyof PallioraConfig, "debug" | "txWaitFinalization">;
 
-export let DEBUG = env.DEBUG === "true" || false;
+let config: Partial<PallioraConfig> | null = null;
+let cachedProvider: WsProvider | null = null;
+let cachedProviderUrl: string | null = null;
 
-export let TX_WAIT_FINALIZATION = env.TX_WAIT_FINALIZATION === "true" || false;
+/**
+ * Initializes the SDK. Call this once, before any other SDK function.
+ *
+ * @remarks
+ * Repeated calls merge into the existing configuration, so a host can supply
+ * the chain endpoint at startup and storage settings later.
+ */
+export function init(options: Partial<PallioraConfig>): void {
+  config = { ...config, ...options };
+}
 
-export let COST_ESTIMATOR_URL = env.COST_ESTIMATOR_URL || "http://localhost:4141";
+/** Whether {@link init} has been called. */
+export function isInitialized(): boolean {
+  return config !== null;
+}
 
-export let AUTH_SERVICE_URL = env.AUTH_SERVICE_URL || "http://localhost:3000";
+/** Clears the configuration. Intended for tests. */
+export function resetConfig(): void {
+  config = null;
+  cachedProvider = null;
+  cachedProviderUrl = null;
+}
 
-export let AWS_REGION = env.AWS_REGION || "us-east-1";
+function read<K extends RequiredKey>(key: K): NonNullable<PallioraConfig[K]> {
+  if (!config) {
+    throw new Error(
+      `Palliora SDK is not initialized: cannot read "${key}". ` +
+        `Call init({ ${key}: ... }) before using the SDK.`,
+    );
+  }
 
-export let AWS_S3_BUCKET = env.AWS_S3_BUCKET || "palliora-storage";
+  const value = config[key];
+  if (value === undefined) {
+    throw new Error(
+      `Palliora SDK config "${key}" is not set. Pass it to init({ ${key}: ... }).`,
+    );
+  }
 
-export let provider = new WsProvider(PALLIORA_WS, 10000);
+  return value as NonNullable<PallioraConfig[K]>;
+}
 
-export function configure(opts: {
-  pallioraWs?: string;
-  pallioraRpcUrl?: string;
-  debug?: boolean;
-  txWaitFinalization?: boolean;
-  costEstimatorUrl?: string;
-  authServiceUrl?: string;
-  awsRegion?: string;
-  awsS3Bucket?: string;
-}) {
+/** @throws when `pallioraWs` was not supplied to {@link init}. */
+export const getPallioraWs = (): string => read("pallioraWs");
 
-  if (opts.pallioraWs !== undefined) PALLIORA_WS = opts.pallioraWs;
-  if (opts.pallioraRpcUrl !== undefined) PALLIORA_RPC_URL = opts.pallioraRpcUrl;
-  if (opts.debug !== undefined) DEBUG = opts.debug;
-  if (opts.txWaitFinalization !== undefined) TX_WAIT_FINALIZATION = opts.txWaitFinalization;
-  if (opts.costEstimatorUrl !== undefined) COST_ESTIMATOR_URL = opts.costEstimatorUrl;
-  if (opts.authServiceUrl !== undefined) AUTH_SERVICE_URL = opts.authServiceUrl;
-  if (opts.awsRegion !== undefined) AWS_REGION = opts.awsRegion;
-  if (opts.awsS3Bucket !== undefined) AWS_S3_BUCKET = opts.awsS3Bucket;
+/** @throws when `pallioraRpcUrl` was not supplied to {@link init}. */
+export const getPallioraRpcUrl = (): string => read("pallioraRpcUrl");
 
-  provider = new WsProvider(PALLIORA_WS, 10000);
+/** @throws when `costEstimatorUrl` was not supplied to {@link init}. */
+export const getCostEstimatorUrl = (): string => read("costEstimatorUrl");
+
+/** @throws when `authServiceUrl` was not supplied to {@link init}. */
+export const getAuthServiceUrl = (): string => read("authServiceUrl");
+
+/** @throws when `awsRegion` was not supplied to {@link init}. */
+export const getAwsRegion = (): string => read("awsRegion");
+
+/** @throws when `awsS3Bucket` was not supplied to {@link init}. */
+export const getAwsS3Bucket = (): string => read("awsS3Bucket");
+
+/** Defaults to `false` when not supplied to {@link init}. */
+export const isDebug = (): boolean => config?.debug ?? false;
+
+/** Defaults to `false` when not supplied to {@link init}. */
+export const waitsForFinalization = (): boolean => config?.txWaitFinalization ?? false;
+
+/**
+ * Returns the shared {@link WsProvider}, creating it on first use and replacing
+ * it whenever `pallioraWs` changes.
+ *
+ * @throws when `pallioraWs` was not supplied to {@link init}.
+ */
+export function getProvider(): WsProvider {
+  const url = getPallioraWs();
+
+  if (!cachedProvider || cachedProviderUrl !== url) {
+    cachedProvider = new WsProvider(url, 10000);
+    cachedProviderUrl = url;
+  }
+
+  return cachedProvider;
 }

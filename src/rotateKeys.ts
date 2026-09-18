@@ -3,17 +3,17 @@ import bs58 from 'bs58';
 import { debugLog } from "./utils/helper";
 import assert from "assert";
 import type { KeyringPair } from "@polkadot/keyring/types";
-import { provider } from "./config";
+import { getProvider } from "./config";
 
 export async function rotateAndSetKeys(account: KeyringPair) {
   const api = await getApi();
 
   assert(api, "API not initialized");
 
-  debugLog(`Rotating session keys for ${account.meta.name} on ${provider.endpoint}`);
+  debugLog(`Rotating session keys for ${account.meta.name} on ${getProvider().endpoint}`);
 
   const newKeys = await api.rpc.author.rotateKeys();
-  debugLog(`${account.meta.name} rotated keys on ${provider.endpoint}:`, newKeys?.toHex?.() ?? newKeys);
+  debugLog(`${account.meta.name} rotated keys on ${getProvider().endpoint}:`, newKeys?.toHex?.() ?? newKeys);
 
   const setKeysTx = api.tx.session.setKeys(newKeys, []);
   const hash = await signAndSend(setKeysTx, account);
