@@ -11,6 +11,7 @@ You get:
 - **`IndexerClient`** — configurable HTTP client (base URL, custom fetch)
 - **REST wrappers** — one function per indexer endpoint
 - **UI helpers** — `storeType` filters, contract/artefact flow assemblers, guardian identity helpers
+- **Results API** — `getResults` / `getResult` for `palliora-compute.results`
 - **TypeScript types** — queries, documents, and response envelopes
 - **`IndexerHttpError`** — structured errors with HTTP status codes
 
@@ -34,7 +35,9 @@ import {
   getModels,
   getAgents,
   getExtrinsics,
+  getResults,
   getContractFlow,
+  getArtefactContracts,
 } from "@palliora.org/chainsdk";
 
 const client = new IndexerClient({ baseUrl: "http://localhost:5020" });
@@ -54,9 +57,15 @@ const { data: agents } = await getAgents(client);
 // Signed transactions
 const { data: txs } = await getExtrinsics(client, { page: 0, page_size: 25, signed_only: true });
 
-// Contract detail lifecycle for the explorer
+// Execution results for a compute session
+const { data: results } = await getResults(client, { contractId: contracts[0].contractId });
+
+// Contract detail lifecycle for the explorer (5 phases)
 const { data: flow } = await getContractFlow(client, contracts[0].contractId);
-console.log(flow.status, flow.phases.map((p) => p.title));
+console.log(flow.status, flow.computes.length, flow.phases.map((p) => p.title));
+
+// Compute contracts that use an artefact as input/program
+const { data: usages } = await getArtefactContracts(client, "0xartefactId...");
 ```
 
 ## Configuration
@@ -91,30 +100,50 @@ Every function takes an `IndexerClient` as the first argument.
 | `getExecutables(client)` | `storeType === "Executable"` | `SuccessResponse<ArtefactDocument[]>` |
 | `getArtefact(client, id)` | `GET /api/artefact/:id` | `SuccessResponse<ArtefactDocument>` |
 | `getArtefactAccess(client, id, query?)` | `GET /api/artefact/:id/access` | `SuccessResponse<unknown[]>` |
-| `getArtefactContracts(client, id, query?)` | `GET /api/artefact/:id/contracts` | `SuccessResponse<unknown[]>` |
+| `getArtefactContracts(client, id, query?)` | `GET /api/artefact/:id/contracts` (+ fallback) | `SuccessResponse<unknown[]>` |
+| `isArtefactUsage(doc, artefactId)` | pure helper | `boolean` |
 
 `StoreType` values: `"Dataset" | "Model" | "Agent" | "Executable" | "Other"`.
 
 ```ts
 const { data: models } = await getModels(client);
 const { data: other } = await getArtefactsByStoreType(client, "Other");
+
+// Usages: contracts that reference this artefact as input/program
+const { data: usages } = await getArtefactContracts(client, "0xartefact...");
 ```
 
-### Contracts + flow
+`getArtefactContracts` prefers rows that pass `isArtefactUsage`. If an older indexer only returns the artefact itself, it falls back to scanning `/api/artefacts` for referencing contracts.
+
+### Contracts, compute, results + flow
 
 | Function | Endpoint / behavior | Returns |
 |---|---|---|
 | `getContracts(client, query?)` | `GET /api/contracts` | `PaginatedResponse<ContractDocument>` |
 | `getContract(client, id)` | `GET /api/contract/:id` | `SuccessResponse<ContractDocument>` |
 | `getCompute(client, id)` | `GET /api/compute/:id` | `SuccessResponse<ComputeDocument>` |
-| `getContractFlow(client, id)` | contract + compute + phases | `SuccessResponse<ContractFlow>` |
+| `getResults(client, { contractId })` | `GET /api/results?contractId=` | `SuccessResponse<ResultDocument[]>` |
+| `getResult(client, resultId)` | `GET /api/result/:id` | `SuccessResponse<ResultDocument>` |
+| `getContractFlow(client, id)` | contract + compute + results + phases | `SuccessResponse<ContractFlow>` |
+| `normalizeComputes(compute)` | pure helper | `ComputeDocument[]` |
+| `resultToCompute(result)` | map result → compute shape | `ComputeDocument` |
 | `deriveContractStatus(agreement, compute)` | pure helper | `"PENDING" \| "ACCEPTED" \| "PROCESSING" \| "COMPLETED" \| "—"` |
-| `buildContractPhases(agreement, compute)` | pure helper | `ContractFlowPhase[]` |
+| `buildContractPhases(agreement, compute)` | pure helper | `ContractFlowPhase[]` (5 phases) |
 
 ```ts
+const { data: results } = await getResults(client, { contractId: "0xabc..." });
+const { data: one } = await getResult(client, results[0].resultId);
+
 const { data: flow } = await getContractFlow(client, "0xabc...");
-// flow.agreement, flow.compute, flow.status, flow.phases (4 UI phases)
+// flow.agreement
+// flow.compute      — latest request (or null)
+// flow.computes     — all requests, oldest → newest
+// flow.results      — rows from palliora-compute.results
+// flow.status       — PENDING | ACCEPTED | PROCESSING | COMPLETED
+// flow.phases       — phase-1 … phase-5 (agreement → request → execution → fees → close out)
 ```
+
+Missing `/api/compute/:id` or `/api/results` (`404`) is treated as empty.
 
 ### Artefact flow
 
@@ -122,7 +151,7 @@ const { data: flow } = await getContractFlow(client, "0xabc...");
 |---|---|---|
 | `getArtefactFlow(client, id, accessQuery?)` | artefact + access + blobs | `SuccessResponse<ArtefactFlow>` |
 
-Missing access (`404`) becomes `[]`. Missing blobs are skipped.
+Missing access (`404`) becomes `[]`. Missing blobs are skipped. Blob heights come from `artefact.blobRefs`.
 
 ### Blocks
 
@@ -161,14 +190,12 @@ const { data } = await getBlocks(client, { page: 0, page_size: 5 });
 | `getExtrinsic(client, indexOrHash)` | `GET /api/extrinsic/:indexOrHash` | `SuccessResponse<ExtrinsicDocument>` |
 
 ```ts
-// page default 0, page_size default 10 (max 100)
 const { data, total } = await getExtrinsics(client, {
   page: 0,
   page_size: 25,
   signed_only: true,
 });
 
-// By height-index or tx hash
 await getExtrinsic(client, "2528092-2");
 await getExtrinsic(client, "0x8699070554e60992...");
 ```
@@ -202,12 +229,9 @@ Indexer excludes `nonce`, `_id`, `tip`, `signature` from responses.
 
 ```ts
 const { data: groups } = await getGuardianGroups(client);
-// group.guardians: string[]
-// group.guardianNames: (string | null)[]  — parallel identity names
+// group.guardians / group.guardianNames (parallel arrays)
 
-const { data: guardians } = await getGuardians(client);
-// [{ account, displayName }]
-
+const { data: guardians } = await getGuardians(client); // [{ account, displayName }]
 const { data: one } = await getGuardian(client, "5F...");
 ```
 
@@ -258,18 +282,18 @@ pnpm test:indexer         # unit tests under test/indexer/
 src/indexer/
 ├── index.ts        # Barrel re-exports
 ├── client.ts       # IndexerClient + IndexerHttpError
-├── types.ts        # Shared types
-├── artefacts.ts    # artefacts + storeType helpers
-├── contracts.ts    # contracts + compute
-├── flow.ts         # getContractFlow, getArtefactFlow, phase helpers
-├── blocks.ts       # getBlocks
-├── calls.ts        # getCall, getCallMetadata, getCallArgs
-├── transfers.ts    # getTransfers
-├── extrinsics.ts   # getExtrinsics, getExtrinsic
-├── addresses.ts    # getAddresses, getAddress
-├── blobs.ts        # getBlob
-├── guardians.ts    # groups + getGuardians / getGuardian
-├── access.ts       # legacy getAccess
+├── types.ts        # Shared types (incl. ResultDocument, ContractFlow)
+├── artefacts.ts    # artefacts + storeType helpers + isArtefactUsage
+├── contracts.ts    # contracts, compute, results
+├── flow.ts         # getContractFlow, getArtefactFlow, normalizeComputes, resultToCompute
+├── blocks.ts
+├── calls.ts
+├── transfers.ts
+├── extrinsics.ts
+├── addresses.ts
+├── blobs.ts
+├── guardians.ts
+├── access.ts
 ├── README.md
 └── AGENTS.md
 ```

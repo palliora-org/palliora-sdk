@@ -102,6 +102,44 @@ export interface ComputeDocument {
   [key: string]: unknown;
 }
 
+export interface ResultFeeParty {
+  recipient?: string;
+  amount?: string;
+  kind?: string;
+  [key: string]: unknown;
+}
+
+export interface ResultFeeBreakdown {
+  inputFee?: ResultFeeParty | null;
+  programFee?: ResultFeeParty | null;
+  thresholdDecryptionFee?: unknown;
+  computeFee?: ResultFeeParty | null;
+  submitorFee?: ResultFeeParty | null;
+  resultFee?: string;
+  totalCharged?: string;
+  reservedFee?: string;
+  refundedAmount?: string;
+  [key: string]: unknown;
+}
+
+/** One execution stored in `palliora-compute.results`. */
+export interface ResultDocument {
+  resultId: string;
+  contractId: string;
+  contractType?: string;
+  submitor?: string;
+  computeDurationMs?: number;
+  executionOutcome?: unknown;
+  feeBreakdown?: ResultFeeBreakdown;
+  indexer?: IndexerMeta;
+  [key: string]: unknown;
+}
+
+export interface ResultsQuery {
+  /** Filter `palliora-compute.results` by parent contract. Required by the indexer. */
+  contractId: string;
+}
+
 export type ContractFlowStatus = "PENDING" | "ACCEPTED" | "PROCESSING" | "COMPLETED";
 
 export interface ContractFlowPhase {
@@ -115,13 +153,15 @@ export interface ContractFlowPhase {
   pending: boolean;
 }
 
-/** Combined compute-contract lifecycle assembled from `/api/contract/:id` + `/api/compute/:id`. */
+/** Combined compute-contract lifecycle assembled from `/api/contract/:id` + `/api/compute/:id` + `/api/results`. */
 export interface ContractFlow {
   agreement: ContractDocument;
   /** Latest compute request, if any. Prefer {@link ContractFlow.computes} for session flows. */
   compute: ComputeDocument | null;
   /** Every compute request on this agreement, oldest first. */
   computes: ComputeDocument[];
+  /** Execution rows from `palliora-compute.results` for this contract. */
+  results: ResultDocument[];
   status: ContractFlowStatus;
   phases: ContractFlowPhase[];
 }

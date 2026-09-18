@@ -107,13 +107,35 @@ export async function getArtefactAccess(
   );
 }
 
+function nestedContractId(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "id" in value) {
+    const id = (value as { id?: unknown }).id;
+    return typeof id === "string" ? id : undefined;
+  }
+  return undefined;
+}
+
+/** True when `doc` is a compute contract that references this artefact. */
+export function isArtefactUsage(doc: Record<string, unknown> | null | undefined, artefactId: string): boolean {
+  if (!doc || doc.contractId === artefactId) return false;
+  if (doc.inputContractId === artefactId) return true;
+  const compute = doc.compute as Record<string, Record<string, unknown>> | undefined;
+  const inputId = nestedContractId(compute?.input?.contractId);
+  const programId = nestedContractId(compute?.program?.contractId);
+  return inputId === artefactId || programId === artefactId;
+}
+
 /**
- * Fetch contract records associated with a specific artefact.
+ * Fetch compute contracts that use this artefact as input or program.
  *
  * `GET /api/artefact/:id/contracts`
  *
+ * Older indexers returned the artefact document itself. In that case this
+ * helper scans `/api/artefacts` and keeps rows that reference the artefact.
+ *
  * @param client  Configured {@link IndexerClient}
- * @param id      The `contractId` of the artefact
+ * @param id      The artefact `contractId`
  * @param query   Optional filters — `blockHeight`, `extrinsicIndex`, `retriver`
  */
 export async function getArtefactContracts(
@@ -121,8 +143,32 @@ export async function getArtefactContracts(
   id: string,
   query?: ArtefactContractsQuery,
 ): Promise<SuccessResponse<unknown[]>> {
-  return client.get(
+  const response = await client.get<SuccessResponse<unknown[]>>(
     `/api/artefact/${encodeURIComponent(id)}/contracts`,
     query ? { ...query } : undefined,
   );
+  const list = Array.isArray(response.data) ? response.data : [];
+  const usages = list.filter((item) => isArtefactUsage(item as Record<string, unknown>, id));
+  if (usages.length > 0) {
+    return { ...response, data: usages };
+  }
+
+  const looksLikeSelfOnly =
+    list.length > 0 &&
+    list.every((item) => (item as { contractId?: string })?.contractId === id);
+
+  if (!looksLikeSelfOnly) {
+    return {
+      ...response,
+      data: list.filter((item) => (item as { contractId?: string })?.contractId !== id),
+    };
+  }
+
+  const artefacts = await getArtefacts(client);
+  return {
+    success: true,
+    data: (artefacts.data || []).filter((item) =>
+      isArtefactUsage(item as unknown as Record<string, unknown>, id),
+    ),
+  };
 }

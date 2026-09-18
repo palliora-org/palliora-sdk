@@ -4,6 +4,8 @@ import type {
   ContractsQuery,
   ComputeDocument,
   PaginatedResponse,
+  ResultDocument,
+  ResultsQuery,
   SuccessResponse,
 } from "./types";
 
@@ -51,4 +53,28 @@ export async function getCompute(
   id: string,
 ): Promise<SuccessResponse<ComputeDocument>> {
   return client.get(`/api/compute/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Fetch compute results for a contract from `palliora-compute.results`.
+ *
+ * `GET /api/results?contractId=`
+ */
+export async function getResults(
+  client: IndexerClient,
+  query: ResultsQuery,
+): Promise<SuccessResponse<ResultDocument[]>> {
+  return client.get("/api/results", { contractId: query.contractId });
+}
+
+/**
+ * Fetch a single compute result by `resultId`.
+ *
+ * `GET /api/result/:id`
+ */
+export async function getResult(
+  client: IndexerClient,
+  id: string,
+): Promise<SuccessResponse<ResultDocument>> {
+  return client.get(`/api/result/${encodeURIComponent(id)}`);
 }

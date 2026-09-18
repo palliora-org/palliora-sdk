@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { IndexerClient, IndexerHttpError } from "../../src/indexer/client";
 import { getArtefacts, getArtefact, getArtefactAccess, getArtefactContracts, getModels, getAgents, getDatasets, getExecutables } from "../../src/indexer/artefacts";
-import { getContracts, getContract, getCompute } from "../../src/indexer/contracts";
+import { getContracts, getContract, getCompute, getResults, getResult } from "../../src/indexer/contracts";
 import { getBlocks } from "../../src/indexer/blocks";
 import { getCall, getCallMetadata, getCallArgs } from "../../src/indexer/calls";
 import { getTransfers } from "../../src/indexer/transfers";
@@ -102,6 +102,38 @@ describe("GET /api/compute/:id", () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toBeDefined();
+  });
+});
+
+describe("GET /api/results", () => {
+  it("returns results filtered by contractId", async () => {
+    if (!firstContractId) {
+      const list = await getContracts(client, { page: 0, page_size: 1 });
+      firstContractId = list.data[0].contractId;
+    }
+
+    const result = await getResults(client, { contractId: firstContractId });
+
+    expect(result.success).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
+    for (const row of result.data) {
+      expect(row.contractId).toBe(firstContractId);
+      expect(row).toHaveProperty("resultId");
+    }
+  });
+
+  it("fetches a result by resultId when one exists", async () => {
+    if (!firstContractId) {
+      const list = await getContracts(client, { page: 0, page_size: 1 });
+      firstContractId = list.data[0].contractId;
+    }
+
+    const list = await getResults(client, { contractId: firstContractId });
+    if (!list.data.length) return;
+
+    const result = await getResult(client, list.data[0].resultId);
+    expect(result.success).toBe(true);
+    expect(result.data.resultId).toBe(list.data[0].resultId);
   });
 });
 

@@ -252,7 +252,9 @@ import {
   getModels,
   getAgents,
   getExtrinsics,
+  getResults,
   getContractFlow,
+  getArtefactContracts,
 } from "@palliora.org/chainsdk";
 
 const client = new IndexerClient({ baseUrl: "http://localhost:5020" });
@@ -265,7 +267,11 @@ const { data: models } = await getModels(client);   // storeType === "Model"
 const { data: agents } = await getAgents(client);   // storeType === "Agent"
 
 const { data: txs } = await getExtrinsics(client, { signed_only: true });
+const { data: results } = await getResults(client, { contractId: "0x..." });
 const { data: flow } = await getContractFlow(client, "0xcontractId...");
+// flow.computes, flow.results, flow.phases (phase-1 … phase-5)
+
+const { data: usages } = await getArtefactContracts(client, "0xartefactId...");
 ```
 
 Full API, response shapes, and agent integration notes:

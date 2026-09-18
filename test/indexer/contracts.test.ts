@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getContracts, getContract, getCompute } from "../../src/indexer/contracts";
+import { getContracts, getContract, getCompute, getResults, getResult } from "../../src/indexer/contracts";
 import { mockClient, INDEXER_META } from "./helpers";
 
 const CONTRACT_DOC = {
@@ -76,5 +76,46 @@ describe("getCompute", () => {
 
     expect(requests[0].url).toContain("/api/compute/0xc1");
     expect(result.data).toEqual({ compute: "result" });
+  });
+});
+
+const RESULT_DOC = {
+  resultId: "0xr1",
+  contractId: "0xc1",
+  contractType: "Active",
+  submitor: "5HTntg",
+  computeDurationMs: 322,
+  executionOutcome: null,
+  feeBreakdown: {
+    submitorFee: { recipient: "5HTntg", amount: "100", kind: "Submitor" },
+    resultFee: "0",
+    refundedAmount: "50",
+  },
+  indexer: INDEXER_META,
+};
+
+describe("getResults", () => {
+  it("calls GET /api/results with contractId", async () => {
+    const body = { success: true, data: [RESULT_DOC] };
+    const { client, requests } = mockClient(body);
+
+    const result = await getResults(client, { contractId: "0xc1" });
+
+    const url = new URL(requests[0].url);
+    expect(url.pathname).toBe("/api/results");
+    expect(url.searchParams.get("contractId")).toBe("0xc1");
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].resultId).toBe("0xr1");
+  });
+});
+
+describe("getResult", () => {
+  it("calls GET /api/result/:id", async () => {
+    const { client, requests } = mockClient({ success: true, data: RESULT_DOC });
+
+    const result = await getResult(client, "0xr1");
+
+    expect(requests[0].url).toContain("/api/result/0xr1");
+    expect(result.data.resultId).toBe("0xr1");
   });
 });

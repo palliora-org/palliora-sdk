@@ -4,6 +4,7 @@ import {
   deriveContractStatus,
   getArtefactFlow,
   getContractFlow,
+  resultToCompute,
 } from "../../src/indexer/flow";
 import { INDEXER_META, mockClientByUrl } from "./helpers";
 
@@ -74,11 +75,36 @@ describe("buildContractPhases", () => {
   });
 });
 
+describe("resultToCompute", () => {
+  it("maps result rows onto compute-request fields", () => {
+    const mapped = resultToCompute({
+      resultId: "0xr1",
+      contractId: "0xc1",
+      submitor: "5HTntg",
+      feeBreakdown: {
+        submitorFee: { amount: "100" },
+        resultFee: "0",
+        thresholdDecryptionFee: [],
+      },
+      indexer: INDEXER_META,
+    });
+
+    expect(mapped.jobId).toBe("0xr1");
+    expect(mapped.orchestrator).toBe("5HTntg");
+    expect(mapped.computeReward).toBe("100");
+    expect(mapped.resultTx).toMatchObject({
+      blockHeight: INDEXER_META.blockHeight,
+      hash: INDEXER_META.blockHash,
+    });
+  });
+});
+
 describe("getContractFlow", () => {
   it("loads agreement + compute and derives the lifecycle", async () => {
     const { client, requests } = mockClientByUrl([
       { match: "/api/contract/0xc1", body: { success: true, data: AGREEMENT } },
       { match: "/api/compute/0xc1", body: { success: true, data: COMPUTE } },
+      { match: "/api/results", body: { success: true, data: [] } },
     ]);
 
     const { data } = await getContractFlow(client, "0xc1");
@@ -87,12 +113,14 @@ describe("getContractFlow", () => {
       expect.arrayContaining([
         expect.stringContaining("/api/contract/0xc1"),
         expect.stringContaining("/api/compute/0xc1"),
+        expect.stringContaining("/api/results"),
       ]),
     );
     expect(data.status).toBe("COMPLETED");
     expect(data.agreement.contractId).toBe("0xc1");
     expect(data.compute?.jobId).toBe("0xjob");
     expect(data.computes).toHaveLength(1);
+    expect(data.results).toEqual([]);
     expect(data.phases[0].id).toBe("phase-1");
     expect(data.phases[3].complete).toBe(true);
     expect(data.phases[4].id).toBe("phase-5");
@@ -107,13 +135,45 @@ describe("getContractFlow", () => {
         ok: false,
         status: 404,
       },
+      { match: "/api/results", body: { success: true, data: [] } },
     ]);
 
     const { data } = await getContractFlow(client, "0xc1");
 
     expect(data.compute).toBeNull();
+    expect(data.results).toEqual([]);
     expect(data.status).toBe("ACCEPTED");
     expect(data.phases[1].status).toBe("PENDING");
+  });
+
+  it("uses palliora-compute results as session compute requests", async () => {
+    const resultDoc = {
+      resultId: "0xa284",
+      contractId: "0xc1",
+      submitor: "5HTntg",
+      computeDurationMs: 322,
+      feeBreakdown: {
+        submitorFee: { recipient: "5HTntg", amount: "100", kind: "Submitor" },
+        resultFee: "0",
+        thresholdDecryptionFee: [],
+      },
+      indexer: INDEXER_META,
+    };
+    const { client } = mockClientByUrl([
+      { match: "/api/contract/0xc1", body: { success: true, data: AGREEMENT } },
+      { match: "/api/compute/0xc1", body: { success: true, data: AGREEMENT } },
+      { match: "/api/results", body: { success: true, data: [resultDoc] } },
+    ]);
+
+    const { data } = await getContractFlow(client, "0xc1");
+
+    expect(data.results).toHaveLength(1);
+    expect(data.computes).toHaveLength(1);
+    expect(data.compute?.jobId).toBe("0xa284");
+    expect(data.compute?.orchestrator).toBe("5HTntg");
+    expect(data.status).toBe("COMPLETED");
+    expect(data.phases[2].complete).toBe(true);
+    expect(data.phases[3].complete).toBe(true);
   });
 });
 

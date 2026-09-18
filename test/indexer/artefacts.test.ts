@@ -10,7 +10,7 @@ import {
   getAgents,
   getExecutables,
 } from "../../src/indexer/artefacts";
-import { mockClient, INDEXER_META } from "./helpers";
+import { mockClient, mockClientByUrl, INDEXER_META } from "./helpers";
 
 const ARTEFACT_DOC = {
   contractId: "0xabc",
@@ -174,5 +174,37 @@ describe("getArtefactContracts", () => {
 
     const url = new URL(requests[0].url);
     expect(url.searchParams.get("retriver")).toBe("5Fxyz");
+  });
+
+  it("keeps compute contracts that reference the artefact", async () => {
+    const usage = {
+      contractId: "0xactive",
+      inputContractId: "0xdef",
+      compute: { input: { contractId: { id: "0xdef" } } },
+      indexer: INDEXER_META,
+    };
+    const { client } = mockClient({ success: true, data: [usage] });
+
+    const result = await getArtefactContracts(client, "0xdef");
+    expect(result.data).toEqual([usage]);
+  });
+
+  it("scans artefacts when the indexer returns the artefact itself", async () => {
+    const artefact = { contractId: "0xdef", storeType: "Dataset", indexer: INDEXER_META };
+    const usage = {
+      contractId: "0xactive",
+      inputContractId: "0xdef",
+      compute: { input: { contractId: { id: "0xdef" } } },
+      indexer: INDEXER_META,
+    };
+    const { client, requests } = mockClientByUrl([
+      { match: "/api/artefact/0xdef/contracts", body: { success: true, data: [artefact] } },
+      { match: "/api/artefacts", body: { success: true, data: [artefact, usage] } },
+    ]);
+
+    const result = await getArtefactContracts(client, "0xdef");
+
+    expect(requests.some((r) => r.url.includes("/api/artefacts"))).toBe(true);
+    expect(result.data).toEqual([usage]);
   });
 });

@@ -1,7 +1,7 @@
 import { IndexerHttpError, type IndexerClient } from "./client";
 import { getArtefact, getArtefactAccess } from "./artefacts";
 import { getBlob } from "./blobs";
-import { getCompute, getContract } from "./contracts";
+import { getCompute, getContract, getResults } from "./contracts";
 import type {
   ArtefactDocument,
   ArtefactAccessQuery,
@@ -12,6 +12,7 @@ import type {
   ContractFlow,
   ContractFlowPhase,
   ContractFlowStatus,
+  ResultDocument,
   SuccessResponse,
 } from "./types";
 
@@ -41,6 +42,46 @@ export function normalizeComputes(compute: ComputeInput): ComputeDocument[] {
   return [...list]
     .filter(isComputeRequest)
     .sort((a, b) => computeTime(a) - computeTime(b));
+}
+
+/**
+ * Map a `palliora-compute.results` row onto the compute-request shape used by
+ * session phases (jobId, orchestrator, resultTx, fees).
+ */
+export function resultToCompute(result: ResultDocument): ComputeDocument {
+  const indexer = result.indexer;
+  return {
+    ...result,
+    jobId: result.resultId,
+    contractId: result.contractId,
+    orchestrator: result.submitor,
+    resultTx: indexer
+      ? {
+          blockHeight: indexer.blockHeight,
+          extrinsicIndex: indexer.extrinsicIndex,
+          blockHash: indexer.blockHash,
+          hash: indexer.blockHash,
+        }
+      : { hash: result.resultId },
+    computeReward: result.feeBreakdown?.submitorFee?.amount,
+    fee: result.feeBreakdown?.resultFee,
+    decryptionFee: result.feeBreakdown?.thresholdDecryptionFee,
+    indexer,
+  };
+}
+
+function mergeComputes(
+  fromResults: ComputeDocument[],
+  fromCompute: ComputeDocument[],
+): ComputeDocument[] {
+  if (fromResults.length === 0) return fromCompute;
+  const ids = new Set(
+    fromResults.flatMap((item) => [item.jobId, item.contractId].filter(Boolean) as string[]),
+  );
+  const extras = fromCompute.filter(
+    (item) => !ids.has(item.jobId ?? "") && !ids.has(item.contractId ?? ""),
+  );
+  return normalizeComputes([...fromResults, ...extras]);
 }
 
 function withParties(agreement: ContractDocument): ContractDocument {
@@ -175,25 +216,33 @@ export function buildContractPhases(
 }
 
 /**
- * Fetch a compute contract and its compute request(s), then derive session
- * lifecycle status and the five UI phases used by the explorer.
+ * Fetch a compute contract, optional `/api/compute/:id` payload, and
+ * `palliora-compute.results` rows, then derive session lifecycle status and
+ * the five UI phases used by the explorer.
  *
- * A missing compute document (`404`) is treated as "agreement only".
+ * Missing compute (`404`) or results (`404`) is treated as empty.
  */
 export async function getContractFlow(
   client: IndexerClient,
   id: string,
 ): Promise<SuccessResponse<ContractFlow>> {
-  const [agreementResponse, compute] = await Promise.all([
+  const [agreementResponse, compute, results] = await Promise.all([
     getContract(client, id),
     getCompute(client, id).then((response) => response.data).catch((err) => {
       if (err instanceof IndexerHttpError && err.statusCode === 404) return null;
       throw err;
     }),
+    getResults(client, { contractId: id }).then((response) => response.data).catch((err) => {
+      if (err instanceof IndexerHttpError && err.statusCode === 404) return [];
+      throw err;
+    }),
   ]);
 
   const agreement = withParties(agreementResponse.data);
-  const computes = normalizeComputes(compute);
+  const computes = mergeComputes(
+    (results ?? []).map(resultToCompute),
+    normalizeComputes(compute),
+  );
   const latest = computes[computes.length - 1] ?? null;
 
   return {
@@ -202,6 +251,7 @@ export async function getContractFlow(
       agreement,
       compute: latest,
       computes,
+      results: results ?? [],
       status: deriveContractStatus(agreement, computes) as ContractFlowStatus,
       phases: buildContractPhases(agreement, computes),
     },

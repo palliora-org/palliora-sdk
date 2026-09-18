@@ -13,10 +13,10 @@ Context for AI agents integrating or extending the `@palliora.org/chainsdk` inde
 | Category | Exports |
 |---|---|
 | Client | `IndexerClient`, `IndexerHttpError`, `IndexerClientOptions` |
-| Artefacts | `getArtefacts`, `getArtefact`, `getArtefactAccess`, `getArtefactContracts` |
+| Artefacts | `getArtefacts`, `getArtefact`, `getArtefactAccess`, `getArtefactContracts`, `isArtefactUsage` |
 | storeType UI helpers | `getArtefactsByStoreType`, `getDatasets`, `getModels`, `getAgents`, `getExecutables` |
-| Contracts | `getContracts`, `getContract`, `getCompute` |
-| Flow (explorer UI) | `getContractFlow`, `getArtefactFlow`, `deriveContractStatus`, `buildContractPhases` |
+| Contracts | `getContracts`, `getContract`, `getCompute`, `getResults`, `getResult` |
+| Flow (explorer UI) | `getContractFlow`, `getArtefactFlow`, `normalizeComputes`, `resultToCompute`, `deriveContractStatus`, `buildContractPhases` |
 | Blocks / calls / transfers | `getBlocks`, `getCall`, `getCallMetadata`, `getCallArgs`, `getTransfers` |
 | Extrinsics | `getExtrinsics`, `getExtrinsic` |
 | Addresses / blobs | `getAddresses`, `getAddress`, `getBlob` |
@@ -70,8 +70,10 @@ import {
   getAgents,
   getExtrinsics,
   getExtrinsic,
+  getResults,
   getContractFlow,
   getArtefactFlow,
+  getArtefactContracts,
   getGuardians,
 } from "@palliora.org/chainsdk";
 
@@ -84,7 +86,6 @@ blocks.data.stats;
 
 // Contracts (paginated)
 const contracts = await getContracts(client, { page: 0, page_size: 10 });
-// contracts.data, contracts.total
 
 // UI categories by storeType
 const models = await getModels(client);
@@ -92,15 +93,22 @@ const agents = await getAgents(client);
 
 // Extrinsics / transactions
 const txs = await getExtrinsics(client, { page: 0, page_size: 25, signed_only: true });
-const one = await getExtrinsic(client, "2528092-2");
+await getExtrinsic(client, "2528092-2");
 // or: await getExtrinsic(client, "0xabc...64-char-hex");
+
+// Results from palliora-compute.results
+const results = await getResults(client, { contractId: "0xcontractId..." });
 
 // Explorer detail pages
 const contractFlow = await getContractFlow(client, "0xcontractId...");
-// contractFlow.data = { agreement, compute, status, phases }
+// contractFlow.data = { agreement, compute, computes, results, status, phases }
+// phases: phase-1 … phase-5
 
 const artefactFlow = await getArtefactFlow(client, "0xartefactId...");
-// artefactFlow.data = { artefact, access, blobs }
+// { artefact, access, blobs }
+
+const usages = await getArtefactContracts(client, "0xartefactId...");
+// compute contracts that reference this artefact as input/program
 
 const guardians = await getGuardians(client);
 // [{ account, displayName }]
@@ -144,13 +152,20 @@ getArtefact(client, id: string)
 → Promise<SuccessResponse<ArtefactDocument>>
 
 getArtefactAccess(client, id, query?: { blockHeight?, extrinsicIndex?, retriver? })
+→ Promise<SuccessResponse<unknown[]>>
+
+// Prefer usages that reference the artefact as input/program.
+// If the indexer only returns the artefact itself, falls back to scanning /api/artefacts.
 getArtefactContracts(client, id, query?: { blockHeight?, extrinsicIndex?, retriver? })
 → Promise<SuccessResponse<unknown[]>>
+
+isArtefactUsage(doc, artefactId) → boolean
+// true when doc.inputContractId === artefactId OR compute.input/program.contractId matches
 ```
 
 `StoreType = "Dataset" | "Model" | "Agent" | "Executable" | "Other"`.
 
-### Contracts + compute + flow
+### Contracts + compute + results + flow
 
 ```ts
 getContracts(client, query?: { page?, page_size? })
@@ -159,16 +174,33 @@ getContracts(client, query?: { page?, page_size? })
 getContract(client, id) → Promise<SuccessResponse<ContractDocument>>
 getCompute(client, id)  → Promise<SuccessResponse<ComputeDocument>>
 
-// Assembles agreement + compute for explorer UI
+// palliora-compute.results
+getResults(client, { contractId: string }) → Promise<SuccessResponse<ResultDocument[]>>
+getResult(client, resultId: string)        → Promise<SuccessResponse<ResultDocument>>
+
+// Assembles agreement + compute + results for explorer UI
 getContractFlow(client, id)
 → Promise<SuccessResponse<ContractFlow>>
-// ContractFlow = { agreement, compute, status, phases }
-// status: "PENDING" | "ACCEPTED" | "PROCESSING" | "COMPLETED"
-// phases: 4 ContractFlowPhase objects (agreement → compute → execution → fees)
-// Missing compute (404) → compute: null, status PENDING/ACCEPTED
+// ContractFlow = {
+//   agreement,
+//   compute,    // latest ComputeDocument | null
+//   computes,   // all requests, oldest → newest
+//   results,    // ResultDocument[]
+//   status,     // PENDING | ACCEPTED | PROCESSING | COMPLETED
+//   phases,     // ContractFlowPhase[] phase-1 … phase-5
+// }
+// Phases:
+//   phase-1 Contract Agreement
+//   phase-2 Compute Request
+//   phase-3 Guardian Execution
+//   phase-4 Fee Distribution
+//   phase-5 Close Out
+// Missing compute/results (404) → empty; parties filled from guardians when needed
 
-deriveContractStatus(agreement, compute)  // pure
-buildContractPhases(agreement, compute)   // pure → ContractFlowPhase[]
+normalizeComputes(compute)              // pure → ComputeDocument[] (filters + sorts by blockTime)
+resultToCompute(result: ResultDocument) // map results row → ComputeDocument shape
+deriveContractStatus(agreement, compute)
+buildContractPhases(agreement, compute) // → ContractFlowPhase[]
 ```
 
 ### Artefact flow
@@ -177,7 +209,7 @@ buildContractPhases(agreement, compute)   // pure → ContractFlowPhase[]
 getArtefactFlow(client, id, accessQuery?)
 → Promise<SuccessResponse<ArtefactFlow>>
 // { artefact, access, blobs }
-// access 404 → []; blob 404s skipped; blob heights taken from artefact.blobRefs
+// access 404 → []; blob 404s skipped; blob heights from artefact.blobRefs
 ```
 
 ### Blocks
@@ -309,14 +341,30 @@ interface ArtefactDocument {
 }
 ```
 
+### `ResultDocument`
+
+```ts
+interface ResultDocument {
+  resultId: string;
+  contractId: string;
+  submitor?: string;
+  computeDurationMs?: number;
+  executionOutcome?: unknown;
+  feeBreakdown?: ResultFeeBreakdown;
+  indexer?: IndexerMeta;
+}
+```
+
 ### `ContractFlow` / `ArtefactFlow`
 
 ```ts
 interface ContractFlow {
   agreement: ContractDocument;
-  compute: ComputeDocument | null;
+  compute: ComputeDocument | null;   // latest
+  computes: ComputeDocument[];       // all, oldest → newest
+  results: ResultDocument[];
   status: "PENDING" | "ACCEPTED" | "PROCESSING" | "COMPLETED";
-  phases: ContractFlowPhase[]; // phase-1 … phase-4
+  phases: ContractFlowPhase[];       // phase-1 … phase-5
 }
 
 interface ArtefactFlow {
@@ -360,11 +408,6 @@ const [blocks, contracts, transfers, models, agents, txs] = await Promise.all([
   getAgents(client),
   getExtrinsics(client, { page: 0, page_size: 10, signed_only: true }),
 ]);
-
-blocks.data.blocks;
-contracts.total;
-models.data;
-txs.data;
 ```
 
 ### Category tabs (storeType)
@@ -378,18 +421,23 @@ const tabs = {
 };
 ```
 
-### Contract detail page
+### Contract / session detail page
 
 ```ts
 const { data: flow } = await getContractFlow(client, contractId);
-// Render flow.status + flow.phases[{ title, status, description, json, active, complete, pending }]
+// flow.status
+// flow.computes.length — number of requests in the session
+// flow.results — settled executions
+// flow.phases[{ id, title, status, description, json, active, complete, pending }]
 ```
 
-### Artefact / dataset detail page
+### Artefact detail + usages
 
 ```ts
-const { data } = await getArtefactFlow(client, artefactId);
-// data.artefact, data.access, data.blobs
+const { data: detail } = await getArtefactFlow(client, artefactId);
+const { data: usages } = await getArtefactContracts(client, artefactId);
+// detail.artefact / detail.access / detail.blobs
+// usages = compute contracts that use this artefact
 ```
 
 ### Transaction lookup
@@ -442,13 +490,15 @@ Requires indexer running. Tests tolerate empty collections / undeployed routes b
 3. **Pagination:** `page` (0-indexed) + `page_size` (snake_case). Used by contracts, blocks, transfers, extrinsics.
 4. **`getBlocks` shape:** `{ data: { blocks, stats } }` — not a bare array.
 5. **`storeType` helpers** filter client-side after `GET /api/artefacts` (server query may be ignored).
-6. **Extrinsic IDs:** `"height-index"` or `0x` + 64 hex. Invalid → 400; missing → 404.
-7. **Non-standard envelopes:** `getAddresses` = raw array; `getAddress` = `{ data }` without `success`.
-8. **Flow helpers** tolerate missing compute/access/blobs (404 → null / [] / skip).
-9. **`getGuardians` / `getGuardian`** are derived from guardian-groups; there is no `/api/guardians` route.
-10. **Errors:** always `IndexerHttpError` with `.statusCode` and `.message`.
-11. **Path params** are `encodeURIComponent`-encoded.
-12. **No I/O on construct** — each call is one (or more) HTTP requests.
+6. **`getArtefactContracts`** filters to usage rows via `isArtefactUsage`; falls back to scanning artefacts when the indexer returns only the artefact itself.
+7. **`getContractFlow`** merges `/api/compute/:id` with `/api/results?contractId=` (via `resultToCompute` + `normalizeComputes`) and builds **5** UI phases.
+8. **Extrinsic IDs:** `"height-index"` or `0x` + 64 hex. Invalid → 400; missing → 404.
+9. **Non-standard envelopes:** `getAddresses` = raw array; `getAddress` = `{ data }` without `success`.
+10. **Flow helpers** tolerate missing compute/results/access/blobs (404 → null / [] / skip).
+11. **`getGuardians` / `getGuardian`** are derived from guardian-groups; there is no `/api/guardians` route.
+12. **Errors:** always `IndexerHttpError` with `.statusCode` and `.message`.
+13. **Path params** are `encodeURIComponent`-encoded.
+14. **No I/O on construct** — each call is one (or more) HTTP requests.
 
 ---
 
@@ -458,10 +508,10 @@ Requires indexer running. Tests tolerate empty collections / undeployed routes b
 src/indexer/
 ├── index.ts         # Public barrel
 ├── client.ts        # IndexerClient, IndexerHttpError
-├── types.ts         # All shared types
-├── artefacts.ts     # artefacts + storeType helpers
-├── contracts.ts     # getContracts, getContract, getCompute
-├── flow.ts          # getContractFlow, getArtefactFlow, derive/build helpers
+├── types.ts         # All shared types (ResultDocument, ContractFlow, …)
+├── artefacts.ts     # artefacts + storeType helpers + isArtefactUsage
+├── contracts.ts     # getContracts, getContract, getCompute, getResults, getResult
+├── flow.ts          # getContractFlow, getArtefactFlow, normalizeComputes, resultToCompute
 ├── blocks.ts
 ├── calls.ts
 ├── transfers.ts
@@ -487,4 +537,4 @@ Tests live under `test/indexer/` (`*.test.ts` + `integration.test.ts`).
 5. Add/extend integration coverage in `test/indexer/integration.test.ts`.
 6. Update `README.md` + this `AGENTS.md`.
 
-For **UI-only aggregations** (like `getContractFlow` or `getModels`), prefer a helper in the SDK that composes existing endpoints rather than requiring a new indexer route.
+For **UI-only aggregations** (like `getContractFlow`, `getModels`, or `getArtefactContracts` fallbacks), prefer a helper in the SDK that composes existing endpoints rather than requiring a new indexer route.
