@@ -1,4 +1,4 @@
-import { DEBUG } from "../config";
+import { isDebug } from "../config";
 import { Hex } from "./types";
  
 /**
@@ -109,13 +109,13 @@ export const decodeField = (
 
 /**
  * Conditional debug logging utility.
- * Only logs when DEBUG flag is enabled in config.
+ * Only logs when the debug flag is enabled in config.
  * 
  * @param message - The message to log
  * @param optionalParams - Additional parameters to log
  */
 export const debugLog = (message?: any, ...optionalParams: any[]) => {
-  if (DEBUG) {
+  if (isDebug()) {
     console.log(message, ...optionalParams);
   }
 };

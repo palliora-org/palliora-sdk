@@ -1,11 +1,11 @@
-import { AUTH_SERVICE_URL, AWS_REGION, AWS_S3_BUCKET } from "../config";
+import { getAuthServiceUrl, getAwsRegion, getAwsS3Bucket } from "../config";
 import { StorageProvider } from "./types";
 
 export class S3Provider implements StorageProvider {
   public readonly id = "s3";
 
   getDeterministicUrl(hash: string): string {
-    return `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/Contracts/${hash}`;
+    return `https://${getAwsS3Bucket()}.s3.${getAwsRegion()}.amazonaws.com/Contracts/${hash}`;
   }
 
   async getUploadUrl(
@@ -14,7 +14,7 @@ export class S3Provider implements StorageProvider {
     blockNumber: number,
     expectedUrl: string,
   ): Promise<string> {
-    const response = await fetch(`${AUTH_SERVICE_URL}/api/s3/auth`, {
+    const response = await fetch(`${getAuthServiceUrl()}/api/s3/auth`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ txHash, fileHash, blockNumber, url: expectedUrl })

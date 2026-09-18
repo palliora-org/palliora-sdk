@@ -16,7 +16,7 @@
  */
 
 import {
-  configure,
+  init,
   dataContract,
   disconnectApi,
   getApi,
@@ -53,8 +53,8 @@ async function selectGuardians() {
 }
 
 export async function storeDataContract(payload = DEFAULT_PAYLOAD) {
-  configure({
-    ...(process.env.PALLIORA_WS ? { pallioraWs: process.env.PALLIORA_WS } : {}),
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
     debug: true,
   });
 

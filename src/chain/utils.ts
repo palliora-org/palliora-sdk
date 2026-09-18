@@ -1,4 +1,4 @@
-import { TX_WAIT_FINALIZATION } from "../config";
+import { waitsForFinalization } from "../config";
 import { getApi } from "./singleton";
 import { isFunction } from "@polkadot/util";
 import { DEFAULT_COMPUTE_PAYLOAD } from "./spec";
@@ -29,7 +29,7 @@ export const signAndSend = async (request: SubmittableExtrinsic<'promise'>, acco
       if (result.isFinalized) {
         res(result);
       }
-      if (!TX_WAIT_FINALIZATION && result.isInBlock) {
+      if (!waitsForFinalization() && result.isInBlock) {
         res(result);
       }
       if (result.isError) err(result);

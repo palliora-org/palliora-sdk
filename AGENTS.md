@@ -18,6 +18,7 @@ guardian rate thresholds and the two-transaction group protocol are invisible fr
 
 | Path | Contents |
 |---|---|
+| `src/config.ts` | `init()` and the accessors every other module reads configuration through |
 | `src/chain/` | API singleton, `signAndSend`, type registrations (`spec.ts`), block/extrinsic helpers |
 | `src/compute/` | `compute.agreement` wrappers, fee estimation (`fees.ts`), inference and data contracts |
 | `src/guardian/` | Guardian list, join, and group creation/reconstruction |
@@ -31,11 +32,14 @@ guardian rate thresholds and the two-transaction group protocol are invisible fr
 
 ## Facts that are easy to get wrong
 
+- The SDK reads no environment variables. Everything comes from `init()`, and each
+  accessor throws when its value was never supplied — there are no fallback defaults.
+  Nothing works until a host calls `init()`; `getApi()` throws rather than returning
+  `undefined` when it has not.
 - `src/chain/spec.ts` is the manual type registry. When a chain type changes, it must be
   updated by hand — it is the most likely thing to be stale. See CHAIN-RULES.md §6.
 - Amounts in `Fee` are *human* PALI strings; everything read from the chain is atomic.
 - `getGuardianParticipants()` disconnects the shared API in its `finally` block.
-- `getApi()` can return undefined; assert before use.
 
 ## Working here
 
