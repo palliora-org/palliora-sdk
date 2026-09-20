@@ -13,6 +13,7 @@ export * from "./utils/token";
 export * from "./validator";
 export * from "./config";
 export * from "./identity";
+export * from "./indexer";
 export * from "./rotateKeys";
 
 export * from "@polkadot/util";

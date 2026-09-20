@@ -265,11 +265,11 @@ export const API_TYPES = {
 	},
 	StoreType: {
 		_enum: {
-		Dataset: 'Null',
-		Model: 'Null',
-		Agent: 'Null',
-		Executable: 'Null',
-		Other: 'Null'
+		Dataset: 'Null',     // 0
+		Model: 'Null',       // 1
+		Agent: 'Null',       // 2
+		Executable: 'Null',  // 3
+		Other: 'Null',       // 4
 		}
 	},
 	ComputeMetadata: {

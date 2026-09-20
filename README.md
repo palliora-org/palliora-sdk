@@ -9,6 +9,7 @@
 - API initialization helpers for Palliora.
 - Keyring helpers for regular signing keys and encryption-oriented keys.
 - Wrapper functions for Palliora-specific RPC calls and extrinsics, especially in `guardian/`, `da/`, `compute/`, and `stake/`.
+- **Indexer client** (`src/indexer/`) — typed read-only REST wrappers for `@statescan/indexer` (blocks, contracts, artefacts, extrinsics, transfers, guardians, and UI flow helpers).
 - Utility helpers for token formatting.
 - Crypto helpers for threshold-encryption-adjacent and hybrid encryption workflows.
 
@@ -296,6 +297,49 @@ Main crypto exports:
 - `encrypt(plaintext, key)`
 - `decrypt(ciphertext, key, nonce)`
 - `generateRandomBytes(length?)`
+
+## Indexer (read-only chain data)
+
+For explorer/UI reads against the `@statescan/indexer` REST API (default `http://localhost:5020`):
+
+```ts
+import {
+  IndexerClient,
+  getBlocks,
+  getModels,
+  getAgents,
+  getExtrinsics,
+  getResults,
+  getContractFlow,
+  getArtefactContracts,
+} from "@palliora.org/chainsdk";
+
+const client = new IndexerClient({ baseUrl: "http://localhost:5020" });
+// Do not put /api in baseUrl — paths already include /api/...
+
+const { data: blocks } = await getBlocks(client, { page: 0, page_size: 5 });
+console.log(blocks.blocks, blocks.stats);
+
+const { data: models } = await getModels(client);   // storeType === "Model"
+const { data: agents } = await getAgents(client);   // storeType === "Agent"
+
+const { data: txs } = await getExtrinsics(client, { signed_only: true });
+const { data: results } = await getResults(client, { contractId: "0x..." });
+const { data: flow } = await getContractFlow(client, "0xcontractId...");
+// flow.computes, flow.results, flow.phases (phase-1 … phase-5)
+
+const { data: usages } = await getArtefactContracts(client, "0xartefactId...");
+```
+
+Full API, response shapes, and agent integration notes:
+
+- [`src/indexer/README.md`](src/indexer/README.md) — overview + complete function tables
+- [`src/indexer/AGENTS.md`](src/indexer/AGENTS.md) — detailed integration guide for AI agents
+
+```bash
+pnpm test                 # unit tests
+pnpm test:integration     # live HTTP against local indexer
+```
 
 ## Choosing between raw API and wrappers
 

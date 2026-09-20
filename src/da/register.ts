@@ -4,7 +4,7 @@ import { assert, debugLog } from "../utils";
 import { formatPaliAmount, toAtomicPaliAmount } from "../utils/token";
 import { CipherSuite, OnChainRef } from "./types";
 import type { Fee } from "../chain/types";
-import type { ComputeMetadataInput } from "../compute/agreement";
+import type { StoreType } from "../compute/agreement";
 import type { KeyringPair } from "@polkadot/keyring/types";
 
 export async function writeMetadata(
@@ -45,11 +45,12 @@ export async function writeMetadata(
   return hash;
 }
 
-/**
- * Metadata for a registered DA blob. The `storeType` union lives in
- * `compute/agreement.ts` so there is one copy to keep in step with the pallet.
- */
-export type DataAgreementMetadata = ComputeMetadataInput & {
+
+export interface DataAgreementMetadata {
+  name: string;
+  description: string;
+  /** Maps to the on-chain StoreType enum. */
+  storeType: StoreType;
   /** H256 group identifier. */
   groupId: string;
 };
