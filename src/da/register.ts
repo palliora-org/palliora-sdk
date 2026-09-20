@@ -4,7 +4,7 @@ import { assert, debugLog } from "../utils";
 import { formatPaliAmount, toAtomicPaliAmount } from "../utils/token";
 import { CipherSuite, OnChainRef } from "./types";
 import type { Fee } from "../chain/types";
-import type { ComputeMetadataInput } from "../compute/agreement";
+import type { StoreType } from "../compute/agreement";
 import type { KeyringPair } from "@polkadot/keyring/types";
 
 export async function writeMetadata(
@@ -50,7 +50,7 @@ export interface DataAgreementMetadata {
   name: string;
   description: string;
   /** Maps to the on-chain StoreType enum. */
-  storeType: "Dataset" | "Model" | "Agent" | "Executable" | "Other";
+  storeType: StoreType;
   /** H256 group identifier. */
   groupId: string;
 };

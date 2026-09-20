@@ -668,28 +668,22 @@ inconsistencies between the repositories, not documentation gaps.
 4. **`scripts/test-compute-result.mjs` is stale.** It calls `compute.result` with three
    arguments; the extrinsic now takes five.
 
-5. **`StoreType` variant indices disagree.** The chain defines five variants
-   (`Dataset, Model, Agent, Executable, Other`); `spec.ts` registers four, omitting
-   `Executable`. So `storeType: "Other"` encodes as index 3 and the chain reads it back as
-   `Executable`. Only affects callers passing `"Other"` — `uploadData` maps to
-   `Dataset`/`Model`/`Agent`, which are unaffected.
-
-6. **`ComputeInfo` has fields the SDK helpers omit.** `program_env` and `metadata` exist
+5. **`ComputeInfo` has fields the SDK helpers omit.** `program_env` and `metadata` exist
    on the chain struct but are not set by `simpleCompute`, `inferenceCompute` or
    `dataContract`. Supply them explicitly if you need them.
 
-7. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
+6. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
    as a block number and used as one by `compute.invoke`'s expiry check, but the
    orchestrator reads the same field as a **timeout in seconds** when running a container.
    At 500ms blocks, a value meant as N blocks (N/2 seconds) becomes an N-second container
    budget — twice the intended window.
 
-8. **`/output` is a dead mount.** The orchestrator bind-mounts
+7. **`/output` is a dead mount.** The orchestrator bind-mounts
    `<staging>/output` at `/output` read-write, then never reads it and deletes the staging
    tree after submission. The result channel is stdout (§6.3). Either the mount should be
    removed or it should be collected — as it stands it silently invites data loss.
 
-9. **`programEnv` and ports never reach the container.** The orchestrator sources `env` and
+8. **`programEnv` and ports never reach the container.** The orchestrator sources `env` and
    `ports` from top-level extrinsic arguments that `compute.agreement` does not define, so
    the on-chain `ComputeInfo.programEnv` field is inert (§6.5).
 

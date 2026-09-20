@@ -1,4 +1,4 @@
-import { findEvent, getApi, getGuardianAddress, getKeyring, signAndSend } from "../chain";
+import { findEvent, getApi, getGuardianAddress, getKeyring, signAndSend, type API_TYPES } from "../chain";
 import { assert, debugLog, toAtomicPaliAmount } from "../utils";
 import type { KeyringPair } from "@polkadot/keyring/types";
 import type { SubmittableExtrinsic } from "@polkadot/api/types";
@@ -24,11 +24,11 @@ export const NO_GUARDIAN_GROUP = `0x${"00".repeat(32)}`;
 /**
  * Classification carried in `ComputeMetadata.storeType`.
  *
- * Mirrors `pallet_compute::StoreType` variant-for-variant, and order is the
- * encoding: the variant index is what goes on the wire, so an omitted variant
- * silently shifts every one after it.
+ * Mirrors `pallet_compute::StoreType` variant-for-variant via {@link API_TYPES}.
+ * Order is the encoding: the variant index is what goes on the wire, so an
+ * omitted or reordered variant silently shifts every one after it.
  */
-export type StoreType = "Dataset" | "Model" | "Agent" | "Executable" | "Other";
+export type StoreType = keyof typeof API_TYPES.StoreType._enum;
 
 export interface ComputeMetadataInput {
   /** Human-readable name of the registered artifact. */
