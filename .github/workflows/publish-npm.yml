@@ -43,6 +43,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # Used only to commit the release version through the protected branch ruleset.
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -164,6 +166,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "git@github.com:$GITHUB_REPOSITORY.git"
           git add package.json
           git commit --no-verify -m "chore: bump package version [skip ci]"
           git push origin HEAD:main
