@@ -155,7 +155,9 @@ jobs:
             exit 1
           fi
 
-          echo "package=$(node -p \"require('./package.json').name + '@' + require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          package_name="$(node -p 'require("./package.json").name')"
+          package_version="$(node -p 'require("./package.json").version')"
+          echo "package=${package_name}@${package_version}" >> "$GITHUB_OUTPUT"
 
       - name: Commit version bump
         run: |
