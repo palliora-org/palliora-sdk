@@ -1,6 +1,6 @@
 import bs58 from "bs58";
 import {
-  configure,
+  init,
   getApi,
   getGuardianAddress,
   getKeyring,
@@ -17,11 +17,10 @@ function assertCondition(condition, message) {
 }
 
 export async function testInvalidUrlCompute() {
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: true });
-  } else {
-    configure({ debug: true });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: true,
+  });
 
   const keyring = await getKeyring();
   const signer = keyring.getPairs()[0];
@@ -80,11 +79,10 @@ export async function testInvalidUrlCompute() {
 }
 
 export async function testInlineProgramComputeIntegration() {
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: true });
-  } else {
-    configure({ debug: true });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: true,
+  });
 
   const keyring = await getKeyring();
   const signer = keyring.getPairs()[0];

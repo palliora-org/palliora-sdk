@@ -1,4 +1,4 @@
-import { COST_ESTIMATOR_URL } from "../config";
+import { getCostEstimatorUrl } from "../config";
 import { debugLog } from "../utils";
 
 /** Thrown for any non-2xx response from the cost estimation service. */
@@ -17,7 +17,7 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const url = `${COST_ESTIMATOR_URL}${path}`;
+  const url = `${getCostEstimatorUrl()}${path}`;
   debugLog(`cost estimation service: ${method} ${url}`, body);
 
   const res = await fetch(url, {

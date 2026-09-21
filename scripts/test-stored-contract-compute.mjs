@@ -20,7 +20,7 @@
  */
 
 import {
-  configure,
+  init,
   disconnectApi,
   estimateMinFee,
   formatPaliAmount,
@@ -75,8 +75,8 @@ export async function storedContractCompute(programContractId, inputContractId) 
     "usage: node scripts/test-stored-contract-compute.mjs <programContractId> <inputContractId>",
   );
 
-  configure({
-    ...(process.env.PALLIORA_WS ? { pallioraWs: process.env.PALLIORA_WS } : {}),
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
     debug: true,
   });
 

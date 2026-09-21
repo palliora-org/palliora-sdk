@@ -754,7 +754,7 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 - **`computeRate` is per millisecond**, not per block or per second.
 - **`deadline: 0` means no deadline.**
 - **`computerIndices`** indexes into `contract.guardians`, as does `Trusted { trust_index }`.
-- **Finality.** `signAndSend` resolves at in-block by default; set
-  `TX_WAIT_FINALIZATION=true` to wait for finalization.
+- **Finality.** `signAndSend` resolves at in-block by default; pass
+  `init({ txWaitFinalization: true })` to wait for finalization.
 - **Currency.** `currencyId` defaults to `"Native"`; the deposit is reserved in and settled
   from that currency.

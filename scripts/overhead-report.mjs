@@ -12,7 +12,7 @@
 
 import { writeFileSync } from "fs";
 import {
-  configure,
+  init,
   getApi,
   getKeyring,
   getEncKeyring,
@@ -144,11 +144,10 @@ function encryptPayload(payloadBytes, tauParamsHex, aggKeyHex) {
 }
 
 async function main() {
-  if (process.env.PALLIORA_WS) {
-    configure({ pallioraWs: process.env.PALLIORA_WS, debug: false });
-  } else {
-    configure({ debug: false });
-  }
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: false,
+  });
 
   const api = await getApi();
   if (!api) throw new Error("API not initialized");

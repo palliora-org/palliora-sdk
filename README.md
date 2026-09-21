@@ -37,30 +37,57 @@ the trusted publisher to run `npm publish` directly.
 
 ## Configuration
 
-The SDK reads these environment variables:
+The SDK reads no environment variables. Call `init()` once, before any other SDK
+function, and pass every value your application needs:
 
-- `PALLIORA_WS`: WebSocket endpoint for the chain. Defaults to `wss://manas-rpc.palliora.org`.
-- `DEBUG=true`: Enables debug logging in wrapper helpers.
-- `TX_WAIT_FINALIZATION=true`: Wait for finalization instead of returning once the tx is in-block.
+```ts
+import { init } from "@palliora.org/chainsdk";
 
-Example:
-
-```bash
-export PALLIORA_WS=wss://manas-rpc.palliora.org
-export DEBUG=true
+init({
+	pallioraWs: "wss://manas-rpc.palliora.org",
+	debug: true,
+});
 ```
+
+Where those values come from — `process.env`, `import.meta.env`, a config file, a
+secrets manager — is the host application's decision.
+
+| Option | Required | Purpose |
+|---|---|---|
+| `pallioraWs` | yes | WebSocket endpoint for the chain API connection |
+| `pallioraRpcUrl` | yes | RPC endpoint, when it differs from `pallioraWs` |
+| `costEstimatorUrl` | yes | Base URL of the cost-estimation service |
+| `authServiceUrl` | yes | Base URL of the auth service issuing S3 pre-signed URLs |
+| `awsRegion` | yes | AWS region of the artifact storage bucket |
+| `awsS3Bucket` | yes | Name of the artifact storage bucket |
+| `debug` | no (`false`) | Enables debug logging in wrapper helpers |
+| `txWaitFinalization` | no (`false`) | Waits for finalization instead of returning once the tx is in-block |
+
+Required options are required *lazily*: each one throws only when something
+actually reads it. An application that never touches off-chain storage does not
+need to pass the AWS options, but reading an unset option always throws rather
+than silently falling back to a default.
+
+```ts
+init({ pallioraWs: "wss://manas-rpc.palliora.org" });
+await getApi();          // fine
+await uploadContract();  // throws: config "authServiceUrl" is not set
+```
+
+`init()` merges on repeat calls, so configuration can be supplied in stages.
 
 ## Quick start
 
 The most common flow is:
 
-1. Initialize the API.
+1. Call `init()` with your configuration.
 2. Load or create a signing account from the keyring.
 3. Fetch token metadata once.
 4. Call the wrapper functions you need.
 
 ```ts
 import {
+	init,
 	getKeyring,
 	fetchTokenProperties,
 	formatBalanceWithTokenProperties,
@@ -71,6 +98,8 @@ import {
 } from "@palliora.org/chainsdk";
 
 async function main() {
+	init({ pallioraWs: "wss://manas-rpc.palliora.org" });
+
 	const keyring = await getKeyring();
     const amount = BigInt("1000000000000000000000"); // 1000 PALI
 
@@ -102,7 +131,9 @@ Use these when you want a broader integration and may combine SDK wrappers with 
 ### Default initialization
 
 ```ts
-import { getApi, getKeyring } from "@palliora.org/chainsdk";
+import { init, getApi, getKeyring } from "@palliora.org/chainsdk";
+
+init({ pallioraWs: "wss://manas-rpc.palliora.org" });
 
 const api = await getApi();
 const keyring = await getKeyring();
@@ -110,8 +141,11 @@ const keyring = await getKeyring();
 const signer = keyring.addFromUri("//Alice");
 ```
 
-- `getApi()` returns the shared `ApiPromise` instance.
-- `getKeyring()` returns the shared `sr25519` keyring for signing.
+- `init(options)` configures the SDK. Nothing else works until it has run.
+- `getApi()` returns the shared `ApiPromise` instance. It throws if `init()` was
+  never called or was called without `pallioraWs`.
+- `getKeyring()` returns the shared `sr25519` keyring for signing. It needs no
+  configuration.
 
 ## Wrapper calls
 
