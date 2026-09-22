@@ -11,6 +11,8 @@ export { getArtefacts, getArtefact, getArtefactAccess, getArtefactContracts, get
 export { getContracts, getContract, getCompute, getResults, getResult } from "./contracts";
 export { getContractFlow, getArtefactFlow, deriveContractStatus, buildContractPhases, normalizeComputes, resultToCompute } from "./flow";
 export { getBlocks } from "./blocks";
+export { getOverview } from "./overview";
+export { getEvents } from "./events";
 export { getCall, getCallMetadata, getCallArgs } from "./calls";
 export { getTransfers } from "./transfers";
 export { getExtrinsics, getExtrinsic } from "./extrinsics";

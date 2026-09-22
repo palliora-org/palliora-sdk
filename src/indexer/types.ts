@@ -196,6 +196,32 @@ export interface BlocksQuery {
   page_size?: number;
 }
 
+export interface Overview {
+  accounts: number;
+  transfers: number;
+  latestHeight: number;
+  avgBlockTime: number;
+  activeValidators: number | null;
+}
+
+export interface ChainEvent {
+  indexer: IndexerMeta;
+  section: string;
+  method: string;
+  [key: string]: unknown;
+}
+
+export interface EventsData {
+  items: ChainEvent[];
+  page: number;
+  pageSize: number;
+}
+
+export interface EventsQuery {
+  page?: number;
+  page_size?: number;
+}
+
 // ── Calls ───────────────────────────────────────────────────────────────────
 
 export interface CallDocument {
