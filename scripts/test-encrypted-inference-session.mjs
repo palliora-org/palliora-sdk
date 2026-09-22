@@ -21,7 +21,7 @@
  * the on-chain DaccGuardianGroup event.
  *
  * Optional environment variables:
- *   PALLIORA_WS         – WebSocket endpoint (falls back to SDK default)
+ *   PALLIORA_WS         – WebSocket endpoint (defaults to wss://manas-rpc.palliora.org)
  */
 
 import {
@@ -137,6 +137,11 @@ function buildAsymmetricResultCipher(recipientEd25519PubKey, nonce) {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+    debug: true,
+  });
+
   mark("start");
 
   // --- 1. Resolve signer ---------------------------------------------------

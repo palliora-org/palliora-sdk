@@ -45,8 +45,9 @@
  * guessing — a wrong value would fail decryption silently with no indication why.
  *
  * Required environment:
- *   PALLIORA_WS         – WebSocket endpoint (falls back to SDK default)
- *   COST_ESTIMATOR_URL   – cost-estimation service base URL (falls back to
+ *   PALLIORA_WS         – WebSocket endpoint (defaults to
+ *                          wss://manas-rpc.palliora.org)
+ *   COST_ESTIMATOR_URL   – cost-estimation service base URL (defaults to
  *                          http://localhost:4141)
  *   GUARDIAN_NODE_PUB    – hex-encoded 32-byte public key of the guardian
  *                          expected to process this contract (see above)

@@ -4,7 +4,7 @@
  * Requires .env with PRIVATE_KEY and PALLIORA_WS set.
  */
 import 'dotenv/config';
-import { CryptoType, getApi, getGuardianAddress, getKeyring, pairFromPrivateKeyHex, signAndSend } from '../dist/index.js';
+import { CryptoType, getApi, init, getGuardianAddress, getKeyring, pairFromPrivateKeyHex, signAndSend } from '../dist/index.js';
 
 // ── Hardcoded test inputs ─────────────────────────────────────────────────────
 
@@ -31,6 +31,10 @@ const OPTS = {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? 'wss://manas-rpc.palliora.org',
+  });
+
   console.log('🔌 Connecting to chain...');
   const API = await getApi();
 

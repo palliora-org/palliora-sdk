@@ -1,4 +1,4 @@
-import { getKeyring, payoutStake } from "../dist/index.js";
+import { getKeyring, init, payoutStake } from "../dist/index.js";
 
 function parseEras(raw) {
   const eras = raw
@@ -14,6 +14,10 @@ function parseEras(raw) {
 }
 
 async function main() {
+  init({
+    pallioraWs: process.env.PALLIORA_WS ?? "wss://manas-rpc.palliora.org",
+  });
+
   const [eras, stashAddress] = [[0,1], "5DCR51AGuydb8Vd79sSBBYrvCKonpWF5Q4SN54LLo6az4Hxc"];
 
   const keyring = await getKeyring();
