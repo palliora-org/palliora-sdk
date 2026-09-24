@@ -25,6 +25,12 @@ export interface StoredComputeParams {
   deadline?: number;
   /** Trusted guardian index in the guardians list. Defaults to 0. */
   trustIndex?: number;
+  /**
+   * Raw bytes for `compute.programEnv`. Required when either referenced contract is
+   * threshold-encrypted: the orchestrator reads an access grant from this field to obtain the
+   * key. Build it with `buildAccessGrantEnv({ contractId })`.
+   */
+  programEnv?: number[] | null;
 }
 
 /**
@@ -40,6 +46,10 @@ export interface StoredComputeParams {
  * Only the `input` reference is billed: settlement pays the input contract's
  * owner its `usage_price`, which is why that ID is also what
  * `estimateMinFee` needs to quote the floor.
+ *
+ * Neither reference is decrypted for free. When a referenced contract is threshold-encrypted,
+ * pass `programEnv: buildAccessGrantEnv({ contractId })` naming a settled `accessContract`;
+ * without it the orchestrator has no key and refuses the input.
  */
 export async function storedCompute(params: StoredComputeParams, account: KeyringPair) {
   assert(!!params.programContractId, "storedCompute requires a programContractId");
@@ -53,6 +63,7 @@ export async function storedCompute(params: StoredComputeParams, account: Keyrin
     deadline: params.deadline ?? 0,
     confidentiality: { Trusted: params.trustIndex ?? 0 },
     feeFunction: null,
+    programEnv: params.programEnv ?? null,
     input: { ContractId: { id: params.inputContractId } },
     program: { ContractId: { id: params.programContractId } },
     metadata: buildComputeMetadata(params.metadata),
