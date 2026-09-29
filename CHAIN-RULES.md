@@ -327,12 +327,15 @@ you publish.
 **`Active`** is one job. It reserves, runs, settles on the first result.
 
 **`Subscription`** is a long-lived funded contract. `compute.agreement` reserves the whole
-budget; each `compute.invoke` runs one job against it and stamps `invocation_block`.
-`compute.result` bills that invocation but leaves the contract open. It settles when the
+budget; each `compute.invoke` opens a **session** against it (§3.7a) and runs one job.
+`compute.result` bills that session but leaves the contract open. It settles when the
 remaining reserve drops below one block of compute (`BudgetExhausted`) or the deadline
 passes (`DeadlineReached`) — and, importantly, `invoke` **settles and returns `Ok`** in
 both cases rather than erroring. A successful `invoke` is not proof that a job started;
 check for a `ComputeInvoked` event, and treat `ContractSettled` as the terminal signal.
+
+**Only the contract owner may `invoke`.** A session spends the budget the owner reserved
+at agreement time, so any other signer fails with `NotContractOwner`.
 
 Every contract also gets a deadline at creation: `current_block + ContractDeadlineDuration`
 (14400 blocks at genesis), independent of the `deadline` field inside `ComputeInfo`.
@@ -349,14 +352,14 @@ the ID depends on the nonce, so a resubmitted or reordered transaction produces 
 different contract.
 
 Read a contract back with `api.query.compute.contracts(contractId)` — status, owner,
-`origin_block`, `invocation_block`, `usage_price`, `contract_type`.
+`origin_block`, `session_count`, `usage_price`, `contract_type`.
 
 **`origin_block` is zero on a `Dormant` contract.** The pallet sets it only for `Active`
 and `Subscription`, because the field doubles as the settlement clock and a `Dormant`
-contract never settles. `index` is zero on every contract type. So neither field tells you
-where a registered artifact lives — which matters, because a `ContractId` reference points
-at exactly the contracts that lack it. The registration block survives in the deadline
-instead:
+contract never settles. `session_count` is zero on everything but a `Subscription` that
+has been invoked. So neither field tells you where a registered artifact lives — which
+matters, because a `ContractId` reference points at exactly the contracts that lack it.
+The registration block survives in the deadline instead:
 
 ```ts
 // ContractDeadlines[id] = registration_block + ContractDeadlineDuration,
@@ -368,6 +371,47 @@ const registrationBlock = BigInt(deadline.toString()) - BigInt(duration.toString
 
 This is a derivation, not a record: it is wrong if root changed
 `ContractDeadlineDuration` between registration and lookup.
+
+### 3.7a Session IDs — one per `invoke`, derived like contract IDs
+
+A contract ID addresses a *subscription*. It does not address the individual jobs run
+against it, and a long-lived subscription has many. Each `compute.invoke` therefore mints
+a **session ID**:
+
+```
+session_id = blake2_256(contract_id ++ session_index_le_u32)
+```
+
+where `session_index` is the contract's `session_count` at the time of the call — 0 for
+the first invocation, 1 for the second, and so on. Derived, not random, so you can compute
+it ahead of submitting; but read it off the `ComputeInvoked` event rather than deriving it,
+for the same reason you read contract IDs off `AgreementCreated`.
+
+```ts
+const { sessionId } = await invokeAgreement(agreementId, input, account);
+// sessionId is undefined when the invoke settled the contract instead of starting a job
+```
+
+**The session ID is what the result is addressed to.** `compute.result` takes it as
+`request_id`; `ComputeResult`, `ExecutionSuccess` and the rest report it. The contract ID
+stays the unit of budget and settlement — one reserve, one `SettlementInfo`, one deadline,
+shared by every session under it.
+
+| | addressed by | lives until |
+|---|---|---|
+| The funded agreement | `contract_id` | `BudgetExhausted` / `DeadlineReached` |
+| One job against it | `session_id` | its `compute.result` lands |
+
+Read an open session with `api.query.compute.sessions(sessionId)` — `contract_id`,
+`index`, `invoker`, `started_block` — or `getSessionInfo`. The row is **removed when the
+result lands**, so a settled session reads back as `null`. To map a settled session to its
+contract, take `contract_id` off the `ComputeResult` event, which reports both (§5).
+
+Sessions are also swept when the contract settles, so an invocation the offchain side
+never completed does not linger.
+
+Non-`Subscription` contracts have no sessions: their results are addressed by contract ID,
+and `ComputeResult` reports the same value in both fields.
 
 ### 3.8 Reading a threshold-encrypted contract
 
@@ -533,21 +577,24 @@ ships no wrapper for it.
 The rules that make results fail:
 
 - **`compute_duration_ms` is bounded.** It must not exceed
-  `(elapsed_blocks + 4) × MillisecondsPerBlock`, measured from `invocation_block` (or
-  `origin_block` for non-subscriptions). Overstating duration fails with
-  `ComputeDurationTooLarge`. A very fast chain (500ms blocks) makes this bound tight.
-- **The contract must exist.** `request_id` is the contract ID; an unknown one is
-  `AgreementNotFound`.
+  `(elapsed_blocks + 4) × MillisecondsPerBlock`, measured from the session's
+  `started_block` (or `origin_block` for non-subscriptions). Overstating duration fails
+  with `ComputeDurationTooLarge`. A very fast chain (500ms blocks) makes this bound tight.
+  Because each session carries its own start block, concurrent invocations of one
+  subscription no longer interfere with each other's bound.
+- **The contract must exist.** `request_id` is the session ID for a `Subscription` and the
+  contract ID otherwise; one that resolves to neither is `AgreementNotFound`.
 - **The `contract` argument must be re-supplied in full**, matching the original.
 - **`CheckCompute` gates the extrinsic.** `compute.result` is one of a small allowlist of
   calls permitted to carry a non-default `ComputePayload` (§8); anything else carrying one
   is rejected as `ForbiddenCompute`.
 
-To observe a result as an application, watch for these events on your contract ID:
+To observe a result as an application, watch for these events. On a `Subscription` they
+are keyed by session ID, not contract ID — `ComputeResult` is what ties the two together:
 
 | Event | Meaning |
 |---|---|
-| `compute.ComputeResult(request_id)` | A result landed |
+| `compute.ComputeResult { request_id, contract_id }` | A result landed. `request_id` is the session for a `Subscription`; `contract_id` is always the contract that settled, and is the only place the pair is reported |
 | `compute.ExecutionSuccess` / `ExecutionFailed` / `ExecutionTerminated` | How the job ended |
 | `compute.ExecutionFullSettlement` / `ExecutionPartialSettlement` | How the budget resolved |
 | `compute.ContractSettled { refunded, reason }` | Contract closed, funds returned |
@@ -815,8 +862,9 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 | `ContractAccessNeedsContractId` | `ContractAccess` program paired with an input that is not a `ContractId` (§3.8). |
 | `ContractAccessNeedsThresholdCipher` | `ContractAccess` contract whose own cipher carries no `SilentThreshold` params (§3.8). |
 | `InvalidContractType` | `invoke` called on a non-`Subscription` contract. |
+| `NotContractOwner` | `invoke` called by someone other than the contract owner (§3.6). |
 | `ContractSettled` | Contract already settled — budget exhausted or deadline passed. |
-| `AgreementNotFound` | Unknown contract ID, or a `Subscription` with no settlement record. |
+| `AgreementNotFound` | Unknown contract ID, a `Subscription` with no settlement record, or a `compute.result` whose `request_id` is neither a live session nor a contract (§3.7a). |
 | `ContractExpired` | Past the contract deadline. |
 | `invoke` returns Ok but nothing runs | Deadline or budget check settled the contract instead (§3.6). |
 | `compute.agreement` hangs, never included, no error | A named guardian has not submitted its `agreement_response`; the tx is parked in the future queue (§2.1). |
