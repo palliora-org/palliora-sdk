@@ -39,12 +39,29 @@ export interface ContractInfo {
   owner: string;
   /** Block number at which the contract originated. */
   originBlock: number;
-  /** Block number at which the contract was last invoked. */
-  invocationBlock: number;
-  /** Sequential index assigned to the agreement. */
-  index: number;
+  /**
+   * Number of sessions `compute.invoke` has opened against this contract, and so the
+   * index the next one will use. Zero on every non-`Subscription` contract.
+   */
+  sessionCount: number;
   /** Usage price charged per invocation, in atomic units. */
   usagePrice: bigint;
   /** Contract lifecycle type. */
   contractType: ContractType;
+}
+
+/**
+ * One usage of a `Subscription` contract, read back from `compute.sessions(sessionId)`.
+ * Opened by `compute.invoke` and removed by `compute.result`, so a session that has
+ * already been settled reads back as `null`.
+ */
+export interface SessionInfo {
+  /** Contract this session was opened against — the one holding the reserved budget. */
+  contractId: string;
+  /** Which usage of that contract this is, counting from zero. */
+  index: number;
+  /** Account that called `compute.invoke`. Always the contract owner. */
+  invoker: string;
+  /** Block the session opened at; the clock `compute_duration_ms` is measured against. */
+  startedBlock: number;
 }
