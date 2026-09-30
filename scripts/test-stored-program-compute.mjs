@@ -1,6 +1,7 @@
 import bs58 from "bs58";
 import {
   init,
+  disconnectApi,
   getApi,
   getGuardianAddress,
   getKeyring,
@@ -77,7 +78,13 @@ export async function main() {
   return result;
 }
 
-main().catch((err) => {
-  console.error("simpleCompute integration test failed:", err);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    await disconnectApi();
+    process.exit(0);
+  })
+  .catch(async (err) => {
+    console.error("simpleCompute integration test failed:", err);
+    await disconnectApi().catch(() => {});
+    process.exit(1);
+  });

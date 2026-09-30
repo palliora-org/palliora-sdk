@@ -1,4 +1,4 @@
-import { getKeyring, init, payoutStake } from "../dist/index.js";
+import { disconnectApi, getKeyring, init, payoutStake } from "../dist/index.js";
 
 function parseEras(raw) {
   const eras = raw
@@ -36,7 +36,13 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  console.error("temp payout test failed:", error);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    await disconnectApi();
+    process.exit(0);
+  })
+  .catch(async (error) => {
+    console.error("temp payout test failed:", error);
+    await disconnectApi().catch(() => {});
+    process.exit(1);
+  });
