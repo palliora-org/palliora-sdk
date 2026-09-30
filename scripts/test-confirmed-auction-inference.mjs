@@ -290,13 +290,22 @@ async function main() {
   // 3 guardians; the target guardian is included so the compute request is
   // routed through it.
   //
-  // Deliberately not using the SDK's getGuardianAddress() here: that resolves
-  // guardians via the guardian_guardianList RPC + guardian.workerByKey (a
-  // peer-id-based path), which returned an empty list against staging. The
-  // cost-estimation service's own guardian discovery (guardian-store/src/chain.ts)
-  // instead reads api.query.guardian.guardians() directly, which does return the
-  // full roster there — so this script does the same.
-  const onChainGuardians = (await api.query.guardian.guardians()).toHuman();
+  // The roster comes from staking.guardians, whose keys are the registered
+  // guardians, matching the cost-estimation service's own discovery
+  // (guardian-store/src/chain.ts).
+  //
+  // Deliberately not guardian.guardians: that is guard-session's active session
+  // set, seeded at genesis and rotated from NextGuardians, and never written by
+  // the staking.guard registration path. It is populated on a chain whose
+  // guardians come from genesis, but reads empty wherever they registered
+  // themselves — failing here as though none were registered.
+  //
+  // Deliberately not the SDK's getGuardianAddress() either: that resolves via
+  // the guardian_guardianList RPC, which only a node running the guardian
+  // protocol answers; against a validator it returns an empty list.
+  const onChainGuardians = (await api.query.staking.guardians.entries()).map(
+    ([key]) => key.args[0].toString(),
+  );
   if (!onChainGuardians.includes(TARGET_GUARDIAN)) {
     throw new Error(`guardian ${TARGET_GUARDIAN} has no on-chain guardian entry`);
   }
