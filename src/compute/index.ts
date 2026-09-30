@@ -1,3 +1,4 @@
+export * from './access';
 export * from './agreement';
 export * from './data';
 export * from './fees';

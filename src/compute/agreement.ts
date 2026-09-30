@@ -143,7 +143,19 @@ export interface InvokeAgreementInput {
 
 /**
  * Invokes an existing `Subscription`-type agreement with a new payload, via
- * `compute.invoke`.
+ * `compute.invoke`, opening one session against it.
+ *
+ * The returned `sessionId` — not `agreementId` — is what the result for this invocation
+ * is addressed to: it is what `compute.ComputeResult` reports and what
+ * `getSessionInfo` reads back. The agreement keeps holding the budget, and further
+ * invocations produce further sessions under it.
+ *
+ * `sessionId` is absent when the call settled the contract instead of starting a job
+ * (deadline reached or budget exhausted). `compute.invoke` returns `Ok` in that case, so
+ * a missing `sessionId` is the signal that nothing ran — check for it rather than
+ * treating the receipt as success.
+ *
+ * Only the contract owner may invoke; anyone else fails with `NotContractOwner`.
  *
  * @param agreementId - Hex-encoded agreement ID (as returned by `createAgreement`).
  */
@@ -152,7 +164,7 @@ export async function invokeAgreement(
   input: InvokeAgreementInput,
   account: KeyringPair,
   opts?: Record<string, unknown>,
-) {
+): Promise<Awaited<ReturnType<typeof signAndSend>> & { sessionId?: string }> {
   const api = await getApi();
   if (!api) throw new Error("Api not initialized");
 
@@ -168,7 +180,22 @@ export async function invokeAgreement(
     { Inline: { data: Array.from(input.data) } },
   );
 
-  return signAndSend(tx, account, opts);
+  const receipt = await signAndSend(tx, account, opts);
+
+  if (!receipt.tx_result.isError) {
+    const invokedEvent = findEvent(receipt.tx_result.events, "compute", "ComputeInvoked");
+    if (invokedEvent) {
+      debugLog("Invocation data:", invokedEvent.event.data.toString());
+      return {
+        ...receipt,
+        sessionId:
+          invokedEvent.event.data[0]?.toHex?.() ?? invokedEvent.event.data.toString(),
+      };
+    }
+    debugLog("ComputeInvoked event not found - the invoke settled the contract instead");
+  }
+
+  return receipt;
 }
 
 export async function createSimpleAgreement() {

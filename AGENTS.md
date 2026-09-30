@@ -20,14 +20,14 @@ guardian rate thresholds and the two-transaction group protocol are invisible fr
 |---|---|
 | `src/config.ts` | `init()` and the accessors every other module reads configuration through |
 | `src/chain/` | API singleton, `signAndSend`, type registrations (`spec.ts`), block/extrinsic helpers |
-| `src/compute/` | `compute.agreement` wrappers, fee estimation (`fees.ts`), inference and data contracts |
+| `src/compute/` | `compute.agreement` wrappers, fee estimation (`fees.ts`), inference and data contracts, encrypted-access helpers (`access.ts`) |
 | `src/guardian/` | Guardian list, join, and group creation/reconstruction |
 | `src/da/` | Data availability: submit, upload, register |
 | `src/storage/` | Off-chain artifact storage: provider router and S3 pre-signed upload flow |
 | `src/stake/`, `src/token/`, `src/validator/`, `src/account/` | Staking, transfers, validator and identity operations |
 | `src/crypto/` | Hybrid and threshold encryption helpers |
 | `src/costEstimation/` | Client for the offchain cost-estimation / rate-quote oracle |
-| `scripts/` | Manual end-to-end test scripts against a live chain — useful as worked examples, but not all are current |
+| `scripts/` | Manual end-to-end test scripts against a live chain — useful as worked examples, but not all are current. `test-stored-access-compute.mjs` and `test-encrypted-access-compute.mjs` are current and cover the whole publish → access → use path |
 | `demos/sealed-bid-auction/` | Complete worked application: guardian group, encrypted inputs, compute, result |
 
 ## Facts that are easy to get wrong
@@ -40,6 +40,15 @@ guardian rate thresholds and the two-transaction group protocol are invisible fr
   updated by hand — it is the most likely thing to be stale. See CHAIN-RULES.md §6.
 - Amounts in `Fee` are *human* PALI strings; everything read from the chain is atomic.
 - `getGuardianParticipants()` disconnects the shared API in its `finally` block.
+- **Hex prefixes are inconsistent.** `GuardianGroupInfo` carries `0x`-prefixed hex (its
+  fields come from `.toHex()`), but `testCrypt` validates against `/^[0-9A-Fa-f]*$/` and
+  rejects the `x`, while `hexToUint8Array` parses from index 0 and would read the prefix as
+  data. `src/compute/access.ts` normalises through a local `bareHex`; older call sites such
+  as `encryptedInference.ts` pass `groupPk` through unnormalised and have the same latent
+  bug. Strip the prefix before either function.
+- A `ContractId` input resolves under the **referenced** contract's cipher, not the
+  referencing contract's. An encrypted one needs an access grant named in `programEnv` —
+  see CHAIN-RULES.md §3.8.
 
 ## Working here
 
@@ -51,7 +60,18 @@ npx tsc --noEmit    # typecheck
 ```
 
 There is no test suite. `scripts/*.mjs` are run manually against a chain and are the
-closest thing to integration coverage.
+closest thing to integration coverage. The access-flow scripts need a live orchestrator as
+well as a chain, and the encrypted one needs `STATIC_RESPONSE_KEY` to match the
+orchestrator's — the grant is wrapped to its public half:
+
+```bash
+node scripts/test-stored-access-compute.mjs
+STATIC_RESPONSE_KEY=0x… node scripts/test-encrypted-access-compute.mjs
+```
+
+The encrypted script creates a 3-guardian group on first run and caches it in
+`.guardian-group.json`; a group has no on-chain storage, so that file is the only way to
+recover it (CHAIN-RULES.md §4.3). It is machine-local — do not commit it.
 
 ## Related repositories
 

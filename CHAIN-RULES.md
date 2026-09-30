@@ -172,13 +172,17 @@ At `compute.result`, the reserved deposit is split:
 
 | Recipient | Amount |
 |---|---|
-| Owner of the input contract | `input_fee` (only when input is a `ContractId`) |
+| Owner of the input contract | `input_fee` (only when **`compute.input`** is a `ContractId`) |
 | The contract's guardians | `threshold_decryption_fee`, split equally — **only when there is more than one guardian** |
 | The result submitter | `result_fee + (computeRate × compute_duration_ms)` |
 | You, the contract owner | Everything still reserved, refunded at settlement |
 
 The guardian split divides by `max(guardian_count, 3)`, so a 2-guardian contract leaves a
 third share reserved, which returns to you at settlement rather than being paid out.
+
+Only `compute.input` is billed. `SettlementInfo` records a `ContractId` from that field
+alone, so referencing a contract from `compute.program` — a stored program, say — costs
+nothing and pays its owner nothing.
 
 ---
 
@@ -262,7 +266,7 @@ billed** — fee fields on the check steps are not what settlement reads.
 | `deadline` | `u64` | Block number by which the step must complete. `0` means no deadline — and is not the same as the contract-level deadline (§3.6) |
 | `confidentiality` | enum | `{ Trusted: <index into guardians> }`, or `"TEE"` / `"FHE"` / `"SMPC"`. Determines which guardian threshold prices the offer |
 | `feeFunction` | `Option<u8>` | Dynamic fee function selector. `null` in every current SDK helper |
-| `programEnv` | `Option<Vec<u8>>` | Environment for program execution. Omitted by all SDK helpers — set it explicitly if you need it |
+| `programEnv` | `Option<Vec<u8>>` | Free-form bytes. Despite the name it never becomes container environment variables (§6.5); the orchestrator reads it for an access-grant pointer (§3.8). `storedCompute` and `accessContract` set it, the other helpers do not |
 | `input` | `DAInput` | Where the data comes from |
 | `program` | `DAInput` | Where the code comes from. Same type as `input` |
 | `metadata` | `Option<ComputeMetadata>` | `{ name, description, storeType, groupId }`. `groupId` links the entry to a guardian group (§4.3). Used when registering datasets/models via `Dormant` contracts |
@@ -277,10 +281,10 @@ reference, or a built-in. Variants:
 | `"Null"` | — | Nothing. On `program`, this is the one case where `guardians` may be empty |
 | `Inline` | `{ data: number[] }` | Bytes carried in the extrinsic. Simplest, but counts against block size |
 | `ChainTransaction` | `{ blockNumber, extrinsicIndex }` | Points at data already submitted on-chain |
-| `ContractId` | `{ id: [u8; 32] }` | References another contract. **This is what triggers `input_fee`** — the referenced contract's owner is paid its `usage_price` (§2.5) |
+| `ContractId` | `{ id: [u8; 32] }` | References another contract. **This is what triggers `input_fee`** — the referenced contract's owner is paid its `usage_price` (§2.5). Resolves under the *referenced* contract's cipher, so an encrypted one needs an access grant (§3.8) |
 | `Ipfs` | `{ cid: number[], size: u64 }` | Content-addressed pointer |
 | `Url` | `{ url: number[], size: u64, hash: Option<number[]> }` | Remote fetch. `url` is UTF-8 bytes, not a string |
-| `NativeExecute` | `"Inference"` \| `"ContractAccess"` | Built-in programs. `"Inference"` routes to the orchestrator's Ollama path |
+| `NativeExecute` | `"Inference"` \| `"ContractAccess"` | Built-in programs. `"Inference"` routes to the orchestrator's Ollama path (§6.6); `"ContractAccess"` grants the key to a threshold-encrypted contract and runs nothing (§3.8) |
 | `NativeData` | `"DaFalse"` \| `"DaTrue"` | Built-in static data flags |
 
 `Subscription` contracts are intended to take a `ContractId` input on each invocation —
@@ -323,12 +327,15 @@ you publish.
 **`Active`** is one job. It reserves, runs, settles on the first result.
 
 **`Subscription`** is a long-lived funded contract. `compute.agreement` reserves the whole
-budget; each `compute.invoke` runs one job against it and stamps `invocation_block`.
-`compute.result` bills that invocation but leaves the contract open. It settles when the
+budget; each `compute.invoke` opens a **session** against it (§3.7a) and runs one job.
+`compute.result` bills that session but leaves the contract open. It settles when the
 remaining reserve drops below one block of compute (`BudgetExhausted`) or the deadline
 passes (`DeadlineReached`) — and, importantly, `invoke` **settles and returns `Ok`** in
 both cases rather than erroring. A successful `invoke` is not proof that a job started;
 check for a `ComputeInvoked` event, and treat `ContractSettled` as the terminal signal.
+
+**Only the contract owner may `invoke`.** A session spends the budget the owner reserved
+at agreement time, so any other signer fails with `NotContractOwner`.
 
 Every contract also gets a deadline at creation: `current_block + ContractDeadlineDuration`
 (14400 blocks at genesis), independent of the `deadline` field inside `ComputeInfo`.
@@ -345,14 +352,14 @@ the ID depends on the nonce, so a resubmitted or reordered transaction produces 
 different contract.
 
 Read a contract back with `api.query.compute.contracts(contractId)` — status, owner,
-`origin_block`, `invocation_block`, `usage_price`, `contract_type`.
+`origin_block`, `session_count`, `usage_price`, `contract_type`.
 
 **`origin_block` is zero on a `Dormant` contract.** The pallet sets it only for `Active`
 and `Subscription`, because the field doubles as the settlement clock and a `Dormant`
-contract never settles. `index` is zero on every contract type. So neither field tells you
-where a registered artifact lives — which matters, because a `ContractId` reference points
-at exactly the contracts that lack it. The registration block survives in the deadline
-instead:
+contract never settles. `session_count` is zero on everything but a `Subscription` that
+has been invoked. So neither field tells you where a registered artifact lives — which
+matters, because a `ContractId` reference points at exactly the contracts that lack it.
+The registration block survives in the deadline instead:
 
 ```ts
 // ContractDeadlines[id] = registration_block + ContractDeadlineDuration,
@@ -364,6 +371,105 @@ const registrationBlock = BigInt(deadline.toString()) - BigInt(duration.toString
 
 This is a derivation, not a record: it is wrong if root changed
 `ContractDeadlineDuration` between registration and lookup.
+
+### 3.7a Session IDs — one per `invoke`, derived like contract IDs
+
+A contract ID addresses a *subscription*. It does not address the individual jobs run
+against it, and a long-lived subscription has many. Each `compute.invoke` therefore mints
+a **session ID**:
+
+```
+session_id = blake2_256(contract_id ++ session_index_le_u32)
+```
+
+where `session_index` is the contract's `session_count` at the time of the call — 0 for
+the first invocation, 1 for the second, and so on. Derived, not random, so you can compute
+it ahead of submitting; but read it off the `ComputeInvoked` event rather than deriving it,
+for the same reason you read contract IDs off `AgreementCreated`.
+
+```ts
+const { sessionId } = await invokeAgreement(agreementId, input, account);
+// sessionId is undefined when the invoke settled the contract instead of starting a job
+```
+
+**The session ID is what the result is addressed to.** `compute.result` takes it as
+`request_id`; `ComputeResult`, `ExecutionSuccess` and the rest report it. The contract ID
+stays the unit of budget and settlement — one reserve, one `SettlementInfo`, one deadline,
+shared by every session under it.
+
+| | addressed by | lives until |
+|---|---|---|
+| The funded agreement | `contract_id` | `BudgetExhausted` / `DeadlineReached` |
+| One job against it | `session_id` | its `compute.result` lands |
+
+Read an open session with `api.query.compute.sessions(sessionId)` — `contract_id`,
+`index`, `invoker`, `started_block` — or `getSessionInfo`. The row is **removed when the
+result lands**, so a settled session reads back as `null`. To map a settled session to its
+contract, take `contract_id` off the `ComputeResult` event, which reports both (§5).
+
+Sessions are also swept when the contract settles, so an invocation the offchain side
+never completed does not linger.
+
+Non-`Subscription` contracts have no sessions: their results are addressed by contract ID,
+and `ComputeResult` reports the same value in both fields.
+
+### 3.8 Reading a threshold-encrypted contract
+
+A `Dormant` contract registered under `ThresholdHybrid` stores ciphertext, and the key that
+opens it exists nowhere on chain — the guardian set reconstructs it from partial
+decryptions. Referencing it with `{ ContractId: { id } }` therefore yields bytes you cannot
+read. Getting the key takes a second contract, whose program is the built-in
+`{ NativeExecute: "ContractAccess" }`:
+
+```ts
+// 1. Publish, encrypted to a guardian group (§4.3 — you need its GuardianGroupInfo).
+const stored = await encryptedDataContract({ data, guardianInfo, guardians, fee }, publisher);
+
+// 2. Ask for the key. `cipher` is the stored contract's cipher, restated verbatim.
+const grant = await accessContract({
+  dataContractId: stored.agreementId,
+  cipher: stored.cipher,
+  recipientPublicKey,        // the granted key comes back wrapped to this
+  guardians,
+  fee,                       // floor includes the stored contract's usage price
+}, consumer);
+
+// 3. Run against the ciphertext, naming the grant.
+await storedCompute({
+  programContractId,
+  inputContractId: stored.agreementId,
+  programEnv: buildAccessGrantEnv({ contractId: grant.agreementId }),
+  guardians,
+  fee,
+}, consumer);
+```
+
+Four rules govern this, and each is a distinct failure:
+
+- **The access contract must restate the referenced contract's cipher as its own.**
+  Guardians run partial decryption over the cipher of the contract in front of them, never
+  over the one it points at, so restating is the only way the request reaches the right key.
+- **The restatement is checked.** `agreement` records
+  `blake2_256(td_params ++ tau_params ++ pk_bytes)` for every encrypted `Dormant` contract,
+  in `compute.thresholdCommitments`, and compares an access request against it. A mismatch
+  is `ThresholdCommitmentMismatch`; a reference to a contract with no commitment is
+  `ReferencedContractNotEncrypted`.
+- **`resultCipher` must be `AsymmetricHybrid.Ed25519`.** The grant's result *is* the key, so
+  a plaintext result would publish it on chain; the orchestrator refuses to run without a
+  recipient to wrap to.
+- **The consuming contract must name the grant** in `programEnv`. Without it the
+  orchestrator has no key and fails the run rather than handing the container ciphertext.
+
+A grant is an ordinary `Active` contract: it is billed, it settles on its first result, and
+referencing the encrypted contract pays that contract's owner the usual `input_fee` (§2.5).
+Nothing executes — no container is started, and the referenced data is deliberately *not*
+resolved, because a grant hands over the key rather than the plaintext.
+
+**Who can open a grant.** The key is wrapped by ECDH between the executing node's
+`STATIC_RESPONSE_KEY` and `recipientPublicKey`. A node recomputes that secret from its own
+key and any recipient public key, so it can open every grant it issues. Treat a grant as
+authorising *that node* to read the data, not as a secret only the requester holds — and
+see §7 for why it is not confidentiality in the cryptographic sense either.
 
 ---
 
@@ -471,21 +577,24 @@ ships no wrapper for it.
 The rules that make results fail:
 
 - **`compute_duration_ms` is bounded.** It must not exceed
-  `(elapsed_blocks + 4) × MillisecondsPerBlock`, measured from `invocation_block` (or
-  `origin_block` for non-subscriptions). Overstating duration fails with
-  `ComputeDurationTooLarge`. A very fast chain (500ms blocks) makes this bound tight.
-- **The contract must exist.** `request_id` is the contract ID; an unknown one is
-  `AgreementNotFound`.
+  `(elapsed_blocks + 4) × MillisecondsPerBlock`, measured from the session's
+  `started_block` (or `origin_block` for non-subscriptions). Overstating duration fails
+  with `ComputeDurationTooLarge`. A very fast chain (500ms blocks) makes this bound tight.
+  Because each session carries its own start block, concurrent invocations of one
+  subscription no longer interfere with each other's bound.
+- **The contract must exist.** `request_id` is the session ID for a `Subscription` and the
+  contract ID otherwise; one that resolves to neither is `AgreementNotFound`.
 - **The `contract` argument must be re-supplied in full**, matching the original.
 - **`CheckCompute` gates the extrinsic.** `compute.result` is one of a small allowlist of
   calls permitted to carry a non-default `ComputePayload` (§8); anything else carrying one
   is rejected as `ForbiddenCompute`.
 
-To observe a result as an application, watch for these events on your contract ID:
+To observe a result as an application, watch for these events. On a `Subscription` they
+are keyed by session ID, not contract ID — `ComputeResult` is what ties the two together:
 
 | Event | Meaning |
 |---|---|
-| `compute.ComputeResult(request_id)` | A result landed |
+| `compute.ComputeResult { request_id, contract_id }` | A result landed. `request_id` is the session for a `Subscription`; `contract_id` is always the contract that settled, and is the only place the pair is reported |
 | `compute.ExecutionSuccess` / `ExecutionFailed` / `ExecutionTerminated` | How the job ended |
 | `compute.ExecutionFullSettlement` / `ExecutionPartialSettlement` | How the budget resolved |
 | `compute.ContractSettled { refunded, reason }` | Contract closed, funds returned |
@@ -588,9 +697,10 @@ gets submitted as the result.
 
 Two fields look available from the contract but do not currently reach your container:
 
-- **Environment variables.** `ComputeInfo.programEnv` exists on-chain, but the orchestrator
-  reads `env` from a top-level extrinsic argument that `compute.agreement` does not have.
-  A chain-submitted job therefore runs with **no environment variables** from the contract.
+- **Environment variables.** `ComputeInfo.programEnv` exists on-chain and the orchestrator
+  does read it — but only to find an access-grant pointer (§3.8). Container environment is
+  sourced from a top-level extrinsic `env` argument that `compute.agreement` does not have,
+  so a chain-submitted job still runs with **no environment variables** from the contract.
 - **Port publications.** The orchestrator looks for `ports` on the compute step, but
   `ComputeInfo` has no such field. Ports are reachable only through the orchestrator's
   direct HTTP job API, not from an on-chain contract.
@@ -607,8 +717,12 @@ budget in seconds.
 `{ NativeExecute: "Inference" }` runs no image of yours. The orchestrator reads the **first**
 input file as a complete OpenAI-compatible `/v1/chat/completions` request body, POSTs it to
 Ollama, and submits the raw JSON response as the result. Supply a full request body as your
-input — not a bare prompt. `"ContractAccess"` is defined on-chain but not implemented by the
-orchestrator; any other `NativeExecute` command is rejected.
+input — not a bare prompt.
+
+`{ NativeExecute: "ContractAccess" }` also runs no image, and no container at all: it grants
+the key to the threshold-encrypted contract its input references, and submits that key —
+wrapped to the requester — as its result. See §3.8. Any other `NativeExecute` command is
+rejected.
 
 ### 6.7 Minimal example
 
@@ -661,31 +775,44 @@ inconsistencies between the repositories, not documentation gaps.
    both to the same `MILLISECS_PER_BLOCK`. Adding `#[pallet::constant]` would make this
    exact rather than inferred.
 
-3. **The orchestrator assumes 6000ms blocks.** `computeMaxRunningTimeSecs` in
-   `orchestrator/src/chain.ts` hard-codes `blockTimeMs = 6000`, while the runtime's
-   `MILLISECS_PER_BLOCK` is `500`. Treat its running-time estimates as unreliable.
-
-4. **`scripts/test-compute-result.mjs` is stale.** It calls `compute.result` with three
+3. **`scripts/test-compute-result.mjs` is stale.** It calls `compute.result` with three
    arguments; the extrinsic now takes five.
 
-5. **`ComputeInfo` has fields the SDK helpers omit.** `program_env` and `metadata` exist
-   on the chain struct but are not set by `simpleCompute`, `inferenceCompute` or
-   `dataContract`. Supply them explicitly if you need them.
-
-6. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
+4. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
    as a block number and used as one by `compute.invoke`'s expiry check, but the
    orchestrator reads the same field as a **timeout in seconds** when running a container.
    At 500ms blocks, a value meant as N blocks (N/2 seconds) becomes an N-second container
    budget — twice the intended window.
 
-7. **`/output` is a dead mount.** The orchestrator bind-mounts
+5. **`/output` is a dead mount.** The orchestrator bind-mounts
    `<staging>/output` at `/output` read-write, then never reads it and deletes the staging
    tree after submission. The result channel is stdout (§6.3). Either the mount should be
    removed or it should be collected — as it stands it silently invites data loss.
 
-8. **`programEnv` and ports never reach the container.** The orchestrator sources `env` and
-   `ports` from top-level extrinsic arguments that `compute.agreement` does not define, so
-   the on-chain `ComputeInfo.programEnv` field is inert (§6.5).
+6. **Ports never reach the container.** The orchestrator sources `ports` from a top-level
+   extrinsic argument that `compute.agreement` does not define, so port publications are
+   reachable only through its direct HTTP job API (§6.5). `programEnv` is no longer in this
+   category — it is read, but only for access grants, never as environment variables.
+
+7. **Threshold encryption is bypassable as currently wired.** Two facts compound:
+
+   - `Ciphertext.enc_key` — the `PairingOutput` the symmetric key is derived from — is
+     serialized into `td_params`, which is public in the extrinsic. Since the key is
+     `gen_stretched_key(enc_key)`, anyone who can read the chain can compute it without any
+     guardian participation.
+   - `derive_shared_secret` takes a `salt: &[u8; 32]` and shadows it with zeros before use,
+     so the derived key is not bound to the contract that requested it.
+
+   The guardian threshold round genuinely runs and produces the right key — but the answer
+   is also sitting in the ciphertext. Access grants (§3.8) therefore control *who gets
+   served* the data and *who pays for it*; until these are fixed they are not
+   confidentiality. Do not put a secret in a `ThresholdHybrid` contract on the strength of
+   the encryption alone.
+
+8. **`ComputeInfo.metadata` is omitted by some helpers.** `dataContract`,
+   `encryptedDataContract`, `storedCompute` and `accessContract` set it; `simpleCompute`
+   and `inferenceCompute` do not. Supply it explicitly if you need a registered artifact to
+   be identifiable on chain.
 
 ---
 
@@ -730,16 +857,24 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 | `Invalid: Custom(148)` | A named guardian is not registered/staked (§3.2). |
 | Opaque decode failure on `agreement` | Wrong field shape — snake_case keys, or a missing enum payload (§3). |
 | `ComputeDurationTooLarge` | Reported duration exceeds `(elapsed_blocks + 4) × block_ms` (§5). |
+| `ThresholdCommitmentMismatch` | A `ContractAccess` contract restated threshold params that are not the referenced contract's (§3.8). |
+| `ReferencedContractNotEncrypted` | `ContractAccess` pointed at a contract with no threshold commitment — not `Dormant`, or not `ThresholdHybrid` (§3.8). |
+| `ContractAccessNeedsContractId` | `ContractAccess` program paired with an input that is not a `ContractId` (§3.8). |
+| `ContractAccessNeedsThresholdCipher` | `ContractAccess` contract whose own cipher carries no `SilentThreshold` params (§3.8). |
 | `InvalidContractType` | `invoke` called on a non-`Subscription` contract. |
+| `NotContractOwner` | `invoke` called by someone other than the contract owner (§3.6). |
 | `ContractSettled` | Contract already settled — budget exhausted or deadline passed. |
-| `AgreementNotFound` | Unknown contract ID, or a `Subscription` with no settlement record. |
+| `AgreementNotFound` | Unknown contract ID, a `Subscription` with no settlement record, or a `compute.result` whose `request_id` is neither a live session nor a contract (§3.7a). |
 | `ContractExpired` | Past the contract deadline. |
 | `invoke` returns Ok but nothing runs | Deadline or budget check settled the contract instead (§3.6). |
 | `compute.agreement` hangs, never included, no error | A named guardian has not submitted its `agreement_response`; the tx is parked in the future queue (§2.1). |
 | Result is empty on-chain | The image wrote to `/output`; only stdout is collected (§6.3). |
 | Result contains log noise or banners | stderr is interleaved into stdout (§6.3). |
 | Result is corrupted / mojibake | Binary written to stdout; it is decoded as UTF-8 (§6.3). |
-| Container sees no environment variables | `programEnv` is not plumbed through (§6.5). |
+| Container sees no environment variables | `programEnv` never becomes env vars; it is only read for access grants (§6.5). |
+| `input materialization failed: … names no access grant` | The input references an encrypted contract and `programEnv` names no grant (§3.8). |
+| Grant result is `Failed`, orchestrator logs a missing `sharedKey` | The `ContractAccess` contract's cipher is not `ThresholdHybrid`, so no threshold round ran (§3.8). |
+| Grant refused before running, `resultCipher` complaint | `ContractAccess` needs `AsymmetricHybrid.Ed25519`; a plaintext result would publish the key (§3.8). |
 | Image pull fails for a `Url` program | `Url` expects a `docker save` tarball, not a registry reference (§6.1). |
 | Group info cannot be found | No on-chain storage for groups; you need the creation block+index (§4.3). |
 | API disconnects mid-flow | `getGuardianParticipants` disconnects the shared API on exit (§4.1). |

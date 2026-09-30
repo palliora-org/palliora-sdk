@@ -405,10 +405,15 @@ export const API_TYPES = {
 		status: 'AgreementStatus',
 		owner: 'AccountId',
 		originBlock: 'u32',
-		invocationBlock: 'u32',
-		index: 'u32',
+		sessionCount: 'u32',
 		usagePrice: 'u128',
 		contractType: 'ContractType',
+	},
+	SessionInfo: {
+		contractId: '[u8; 32]',
+		index: 'u32',
+		invoker: 'AccountId',
+		startedBlock: 'u32',
 	},
 	SettlementInfo: {
 		computeRate: 'u128',
