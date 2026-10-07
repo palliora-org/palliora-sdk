@@ -27,7 +27,7 @@ guardian rate thresholds and the two-transaction group protocol are invisible fr
 | `src/stake/`, `src/token/`, `src/validator/`, `src/account/` | Staking, transfers, validator and identity operations |
 | `src/crypto/` | Hybrid and threshold encryption helpers |
 | `src/costEstimation/` | Client for the offchain cost-estimation / rate-quote oracle |
-| `scripts/` | Manual end-to-end test scripts against a live chain — useful as worked examples, but not all are current. `test-stored-access-compute.mjs` and `test-encrypted-access-compute.mjs` are current and cover the whole publish → access → use path |
+| `scripts/` | Manual end-to-end test scripts against a live chain — useful as worked examples, but not all are current. **[scripts/TEST-SUITE.md](scripts/TEST-SUITE.md)** is how to run them all against a deployment. `test-stored-access-compute.mjs` and `test-encrypted-access-compute.mjs` are current and cover the whole publish → access → use path |
 | `demos/sealed-bid-auction/` | Complete worked application: guardian group, encrypted inputs, compute, result |
 
 ## Facts that are easy to get wrong

@@ -3,3 +3,5 @@ dist
 .env*
 .DS_Store
 **/.DS_Store
+scripts/suite-results/
+scripts/suite-runner.log
