@@ -34,7 +34,7 @@ import {
   getApi,
   getKeyring,
   getGuardianAddress,
-  getComputeInvokedSessionId,
+  getComputeInvokedInvocationId,
   createAgreement,
   createGuardianGroupAndWatch,
   scanForBlockEvent,
@@ -406,16 +406,16 @@ async function main() {
   console.log("  Block:", invokeSubmission.blockNumber);
   console.log("  Hash:", invokeSubmission.hash);
 
-  // An invoke settles under the session id from its ComputeInvoked event, not under
-  // the agreement id: the pallet keys `compute.result` by the session when one exists.
-  const invokeSessionId = await getComputeInvokedSessionId(
+  // An invoke settles under the invocation id from its ComputeInvoked event, not under
+  // the agreement id: the pallet keys `compute.result` by the invocation when one exists.
+  const invokeInvocationId = await getComputeInvokedInvocationId(
     invokeSubmission.blockNumber,
     invokeSubmission.index,
   );
-  if (!invokeSessionId) {
-    throw new Error("compute.invoke emitted no ComputeInvoked event: no session id to match");
+  if (!invokeInvocationId) {
+    throw new Error("compute.invoke emitted no ComputeInvoked event: no invocation id to match");
   }
-  console.log("  Session id:", invokeSessionId);
+  console.log("  Invocation id:", invokeInvocationId);
 
   // --- 12. Wait for the invocation result and decrypt -------------------------
   console.log("\nWaiting for invoke compute result...");
@@ -437,7 +437,7 @@ async function main() {
           Array.from(args[0])
             .map((byte) => ("0" + (byte & 0xff).toString(16)).slice(-2))
             .join("");
-        return emittedId === invokeSessionId;
+        return emittedId === invokeInvocationId;
       },
     },
     invokeSubmission.blockNumber + 1,
@@ -450,7 +450,7 @@ async function main() {
     invokeMatch.extrinsicIndex ?? 0,
   );
   const invokeArgs = invokeResultExtrinsic.decoded.method.args;
-  const invokeEmittedSessionId = invokeArgs.request_id ?? invokeArgs.requestId ?? "0x";
+  const invokeEmittedInvocationId = invokeArgs.request_id ?? invokeArgs.requestId ?? "0x";
 
   const invokeResultCiphertext = Buffer.from(
     invokeArgs.contract.compute.input.Inline.data.slice(2),
@@ -469,7 +469,7 @@ async function main() {
 
   const invokeResultText = new TextDecoder().decode(invokeDecrypted);
   console.log(
-    `\nReceived invoke result for session ${invokeEmittedSessionId}: ${invokeResultText}`,
+    `\nReceived invoke result for invocation ${invokeEmittedInvocationId}: ${invokeResultText}`,
   );
 
   try {

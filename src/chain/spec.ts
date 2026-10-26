@@ -300,11 +300,6 @@ export const API_TYPES = {
 		resultCipher: 'CipherSuite',
 		currencyId: 'CurrencyId'
 	},
-	AgreementInfo: {
-		status: 'AgreementStatus',
-		creator: 'AccountId',
-		index: 'u32'
-	},
     ComputePayload: {
 		daType: "u8",
 		agreement: "Option<BoundedVec<[u8; 32], 10>>",
@@ -396,7 +391,7 @@ export const API_TYPES = {
 		_enum: ['InsufficientBudget', 'RateMismatch']
 	},
 	SettlementReason: {
-		_enum: ['ResultReceived', 'DeadlineReached', 'BudgetExhausted']
+		_enum: ['ResultReceived', 'DeadlineReached', 'BudgetExhausted', 'Rejected']
 	},
 	ExecutionOutcome: {
 		_enum: ['FullSettlement', 'PartialSettlement', 'Success', 'Failed', 'Terminated', 'TopUpTimeout']
@@ -405,11 +400,11 @@ export const API_TYPES = {
 		status: 'AgreementStatus',
 		owner: 'AccountId',
 		originBlock: 'u32',
-		sessionCount: 'u32',
+		invocationCount: 'u32',
 		usagePrice: 'u128',
 		contractType: 'ContractType',
 	},
-	SessionInfo: {
+	InvocationInfo: {
 		contractId: '[u8; 32]',
 		index: 'u32',
 		invoker: 'AccountId',
@@ -419,6 +414,7 @@ export const API_TYPES = {
 		computeRate: 'u128',
 		inputContractId: 'Option<[u8; 32]>',
 		guardians: 'Vec<AccountId>',
+		currencyId: 'CurrencyId',
 	},
 	AppKeyInfo: {
 		owner: 'AccountId',

@@ -142,20 +142,23 @@ export interface InvokeAgreementInput {
 }
 
 /**
- * Invokes an existing `Subscription`-type agreement with a new payload, via
- * `compute.invoke`, opening one session against it.
+ * Invokes one request with a new payload under an accepted `Subscription`-type agreement,
+ * via `compute.invoke`. The accepted agreement is the session; each invoke only runs a
+ * request under it.
  *
- * The returned `sessionId` — not `agreementId` — is what the result for this invocation
+ * The returned `invocationId` — not `agreementId` — is what the result for this request
  * is addressed to: it is what `compute.ComputeResult` reports and what
- * `getSessionInfo` reads back. The agreement keeps holding the budget, and further
- * invocations produce further sessions under it.
+ * `getInvocationInfo` reads back. The agreement keeps holding the budget, and further
+ * invokes produce further invocations under it.
  *
- * `sessionId` is absent when the call settled the contract instead of starting a job
+ * `invocationId` is absent when the call settled the contract instead of starting a job
  * (deadline reached or budget exhausted). `compute.invoke` returns `Ok` in that case, so
- * a missing `sessionId` is the signal that nothing ran — check for it rather than
+ * a missing `invocationId` is the signal that nothing ran — check for it rather than
  * treating the receipt as success.
  *
- * Only the contract owner may invoke; anyone else fails with `NotContractOwner`.
+ * Only the contract owner may invoke; anyone else fails with `NotContractOwner`. A
+ * contract can have at most `compute.maxOpenInvocations` requests waiting for a result;
+ * invoking past that fails with `TooManyOpenInvocations`.
  *
  * @param agreementId - Hex-encoded agreement ID (as returned by `createAgreement`).
  */
@@ -164,7 +167,7 @@ export async function invokeAgreement(
   input: InvokeAgreementInput,
   account: KeyringPair,
   opts?: Record<string, unknown>,
-): Promise<Awaited<ReturnType<typeof signAndSend>> & { sessionId?: string }> {
+): Promise<Awaited<ReturnType<typeof signAndSend>> & { invocationId?: string }> {
   const api = await getApi();
   if (!api) throw new Error("Api not initialized");
 
@@ -188,7 +191,7 @@ export async function invokeAgreement(
       debugLog("Invocation data:", invokedEvent.event.data.toString());
       return {
         ...receipt,
-        sessionId:
+        invocationId:
           invokedEvent.event.data[0]?.toHex?.() ?? invokedEvent.event.data.toString(),
       };
     }

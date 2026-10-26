@@ -40,10 +40,10 @@ export interface ContractInfo {
   /** Block number at which the contract originated. */
   originBlock: number;
   /**
-   * Number of sessions `compute.invoke` has opened against this contract, and so the
-   * index the next one will use. Zero on every non-`Subscription` contract.
+   * Number of requests `compute.invoke` has made under this contract, and so the index
+   * the next invocation will use. Zero on every non-`Subscription` contract.
    */
-  sessionCount: number;
+  invocationCount: number;
   /** Usage price charged per invocation, in atomic units. */
   usagePrice: bigint;
   /** Contract lifecycle type. */
@@ -51,17 +51,19 @@ export interface ContractInfo {
 }
 
 /**
- * One usage of a `Subscription` contract, read back from `compute.sessions(sessionId)`.
- * Opened by `compute.invoke` and removed by `compute.result`, so a session that has
- * already been settled reads back as `null`.
+ * One request invoked under a `Subscription` contract, read back from
+ * `compute.invocations(invocationId)`. The accepted contract is the session; an invocation
+ * only runs under it. Created by `compute.invoke` and removed once `compute.result`
+ * answers it — or when the contract settles without an answer — so a completed or
+ * abandoned invocation reads back as `null`.
  */
-export interface SessionInfo {
-  /** Contract this session was opened against — the one holding the reserved budget. */
+export interface InvocationInfo {
+  /** Contract this request runs under — the one holding the reserved budget. */
   contractId: string;
-  /** Which usage of that contract this is, counting from zero. */
+  /** Which invocation of that contract this is, counting from zero. */
   index: number;
   /** Account that called `compute.invoke`. Always the contract owner. */
   invoker: string;
-  /** Block the session opened at; the clock `compute_duration_ms` is measured against. */
+  /** Block the request was invoked at; the clock `compute_duration_ms` is measured against. */
   startedBlock: number;
 }

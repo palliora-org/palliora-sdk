@@ -12,6 +12,10 @@ Source citations point into [`palliora-org/palliora`](https://github.com/pallior
 (the chain) and this SDK. Line numbers drift; the function and type names are the stable
 anchors. When this document and the pallet disagree, the pallet is right.
 
+These rules change with runtime upgrades. How such changes ship, and how the SDK stays
+compatible across them, is in
+[`palliora/docs/RUNTIME-UPGRADES.md`](https://github.com/palliora-org/palliora/blob/main/docs/RUNTIME-UPGRADES.md).
+
 ---
 
 ## 1. Orientation: which repository owns which fact
@@ -184,6 +188,11 @@ Only `compute.input` is billed. `SettlementInfo` records a `ContractId` from tha
 alone, so referencing a contract from `compute.program` — a stored program, say — costs
 nothing and pays its owner nothing.
 
+Each payment stops at what is still reserved. If `compute_duration_ms` asks for more than
+is left, the submitter receives the remainder and nothing fails; `SubmitorFeePaid`,
+`InputFeePaid` and `DecryptionFeePaid` report the amount that actually moved, not the
+amount owed.
+
 ---
 
 ## 3. The `Contract` object
@@ -316,7 +325,7 @@ data, executed by the guardian at index 0.
 | Subject to the fee floor | No | Yes | Yes |
 | Subject to guardian thresholds | No | Yes | Yes |
 | `compute.invoke` allowed | No | No | **Yes** |
-| Settles on | Never (registration only) | First result | Budget exhausted, or deadline |
+| Settles on | Never (registration only) | First result, or its deadline | Budget exhausted, or its deadline |
 | `usage_price` set to | `fees` | 0 | 0 |
 
 **`Dormant`** registers something — a dataset, a model, a program, a set of terms — without
@@ -324,21 +333,38 @@ buying execution. Its `fees` becomes its `usage_price`: the amount another contr
 its owner when referencing it via `DAInput::ContractId`. This is how you charge for data
 you publish.
 
-**`Active`** is one job. It reserves, runs, settles on the first result.
+**`Active`** is one job. It reserves, runs, settles on the first result — or at its
+deadline if no result arrives first.
 
-**`Subscription`** is a long-lived funded contract. `compute.agreement` reserves the whole
-budget; each `compute.invoke` opens a **session** against it (§3.7a) and runs one job.
-`compute.result` bills that session but leaves the contract open. It settles when the
-remaining reserve drops below one block of compute (`BudgetExhausted`) or the deadline
-passes (`DeadlineReached`) — and, importantly, `invoke` **settles and returns `Ok`** in
-both cases rather than erroring. A successful `invoke` is not proof that a job started;
-check for a `ComputeInvoked` event, and treat `ContractSettled` as the terminal signal.
+**`Subscription`** is a long-lived funded contract, and its accepted lifetime is the
+**session**: it opens when the agreement becomes `Accepted` and closes when the contract
+settles. `compute.agreement` reserves the whole budget; each `compute.invoke` runs one
+request under the session — an **invocation** (§3.7a). `compute.result` bills that
+invocation but leaves the contract open. The contract settles when the remaining reserve
+drops below one block of compute (`BudgetExhausted`, checked by `invoke`) or at its
+deadline (`DeadlineReached`). An `invoke` that finds the budget exhausted **settles and
+returns `Ok`** rather than erroring, so a successful `invoke` is not proof that a job
+started; check for a `ComputeInvoked` event, and treat `ContractSettled` as the terminal
+signal. Once the contract has settled, every further `invoke` fails with `ContractSettled`.
 
-**Only the contract owner may `invoke`.** A session spends the budget the owner reserved
-at agreement time, so any other signer fails with `NotContractOwner`.
+**Only the contract owner may `invoke`.** An invocation spends the budget the owner
+reserved at agreement time, so any other signer fails with `NotContractOwner`. A contract
+can have at most `compute.maxOpenInvocations` (64) requests waiting for a result; invoking
+past that fails with `TooManyOpenInvocations` until a result frees a slot.
 
-Every contract also gets a deadline at creation: `current_block + ContractDeadlineDuration`
-(14400 blocks at genesis), independent of the `deadline` field inside `ComputeInfo`.
+**Every contract gets a deadline at creation:** `current_block + ContractDeadlineDuration`
+(14400 blocks at genesis), independent of the `deadline` field inside `ComputeInfo`. An
+agreed rate goes stale past it, so the runtime settles every `Active` and `Subscription`
+contract in the first block after its deadline, in `on_initialize`, refunding whatever is
+still reserved — whether or not a result arrived. A result submitted after that fails with
+`ContractSettled`. Expiry is bounded per block (`compute.maxSettlementsPerBlock`), so a
+contract expiring in a crowded block may settle a block or two late, never early. `Dormant`
+contracts keep a deadline entry but never expire.
+
+**A rejection after the deposit was reserved is refunded.** The guardians' verdict can
+land after `compute.agreement` was included. If it is a rejection, `on_finalize` returns
+the whole deposit and emits `ContractSettled { reason: Rejected }`, but the contract keeps
+its `Rejected` status rather than becoming `Settled`.
 
 ### 3.7 Contract IDs are derived, not returned
 
@@ -352,12 +378,12 @@ the ID depends on the nonce, so a resubmitted or reordered transaction produces 
 different contract.
 
 Read a contract back with `api.query.compute.contracts(contractId)` — status, owner,
-`origin_block`, `session_count`, `usage_price`, `contract_type`.
+`origin_block`, `invocation_count`, `usage_price`, `contract_type`.
 
 **`origin_block` is zero on a `Dormant` contract.** The pallet sets it only for `Active`
 and `Subscription`, because the field doubles as the settlement clock and a `Dormant`
-contract never settles. `session_count` is zero on everything but a `Subscription` that
-has been invoked. So neither field tells you where a registered artifact lives — which
+contract never settles. `invocation_count` is zero on everything but a `Subscription`
+that has been invoked. So neither field tells you where a registered artifact lives — which
 matters, because a `ContractId` reference points at exactly the contracts that lack it.
 The registration block survives in the deadline instead:
 
@@ -372,46 +398,48 @@ const registrationBlock = BigInt(deadline.toString()) - BigInt(duration.toString
 This is a derivation, not a record: it is wrong if root changed
 `ContractDeadlineDuration` between registration and lookup.
 
-### 3.7a Session IDs — one per `invoke`, derived like contract IDs
+### 3.7a Invocation IDs — one per `invoke`, derived like contract IDs
 
-A contract ID addresses a *subscription*. It does not address the individual jobs run
-against it, and a long-lived subscription has many. Each `compute.invoke` therefore mints
-a **session ID**:
+A contract ID addresses a *subscription* — the session. It does not address the
+individual requests run under it, and a long-lived subscription has many. Each
+`compute.invoke` therefore mints an **invocation ID**:
 
 ```
-session_id = blake2_256(contract_id ++ session_index_le_u32)
+invocation_id = blake2_256(contract_id ++ invocation_index_le_u32)
 ```
 
-where `session_index` is the contract's `session_count` at the time of the call — 0 for
-the first invocation, 1 for the second, and so on. Derived, not random, so you can compute
-it ahead of submitting; but read it off the `ComputeInvoked` event rather than deriving it,
-for the same reason you read contract IDs off `AgreementCreated`.
+where `invocation_index` is the contract's `invocation_count` at the time of the call — 0
+for the first invocation, 1 for the second, and so on. Derived, not random, so you can
+compute it ahead of submitting; but read it off the `ComputeInvoked` event rather than
+deriving it, for the same reason you read contract IDs off `AgreementCreated`.
 
 ```ts
-const { sessionId } = await invokeAgreement(agreementId, input, account);
-// sessionId is undefined when the invoke settled the contract instead of starting a job
+const { invocationId } = await invokeAgreement(agreementId, input, account);
+// invocationId is undefined when the invoke settled the contract instead of starting a job
 ```
 
-**The session ID is what the result is addressed to.** `compute.result` takes it as
+**The invocation ID is what the result is addressed to.** `compute.result` takes it as
 `request_id`; `ComputeResult`, `ExecutionSuccess` and the rest report it. The contract ID
 stays the unit of budget and settlement — one reserve, one `SettlementInfo`, one deadline,
-shared by every session under it.
+shared by every invocation under it.
 
 | | addressed by | lives until |
 |---|---|---|
-| The funded agreement | `contract_id` | `BudgetExhausted` / `DeadlineReached` |
-| One job against it | `session_id` | its `compute.result` lands |
+| The funded agreement (the session) | `contract_id` | `BudgetExhausted` / `DeadlineReached` |
+| One request under it | `invocation_id` | its `compute.result` lands, or the contract settles |
 
-Read an open session with `api.query.compute.sessions(sessionId)` — `contract_id`,
-`index`, `invoker`, `started_block` — or `getSessionInfo`. The row is **removed when the
-result lands**, so a settled session reads back as `null`. To map a settled session to its
-contract, take `contract_id` off the `ComputeResult` event, which reports both (§5).
+Read a pending invocation with `api.query.compute.invocations(invocationId)` —
+`contract_id`, `index`, `invoker`, `started_block` — or `getInvocationInfo`. The row is
+**removed when the result lands**, so a completed invocation reads back as `null`. To map
+a completed invocation to its contract, take `contract_id` off the `ComputeResult` event,
+which reports both (§5). `api.query.compute.openInvocations(contractId)` lists the ones
+still waiting.
 
-Sessions are also swept when the contract settles, so an invocation the offchain side
-never completed does not linger.
+Invocations still waiting when the contract settles are removed with it: a settled
+contract is never queried again, so nothing of its invocations lingers.
 
-Non-`Subscription` contracts have no sessions: their results are addressed by contract ID,
-and `ComputeResult` reports the same value in both fields.
+Non-`Subscription` contracts have no invocations: their results are addressed by contract
+ID, and `ComputeResult` reports the same value in both fields.
 
 ### 3.8 Reading a threshold-encrypted contract
 
@@ -577,28 +605,32 @@ ships no wrapper for it.
 The rules that make results fail:
 
 - **`compute_duration_ms` is bounded.** It must not exceed
-  `(elapsed_blocks + 4) × MillisecondsPerBlock`, measured from the session's
-  `started_block` (or `origin_block` for non-subscriptions). Overstating duration fails
-  with `ComputeDurationTooLarge`. A very fast chain (500ms blocks) makes this bound tight.
-  Because each session carries its own start block, concurrent invocations of one
-  subscription no longer interfere with each other's bound.
-- **The contract must exist.** `request_id` is the session ID for a `Subscription` and the
-  contract ID otherwise; one that resolves to neither is `AgreementNotFound`.
+  `(elapsed_blocks + ComputeDurationGraceBlocks) × MillisecondsPerBlock`, measured from the
+  invocation's `started_block` (or `origin_block` for non-subscriptions). The grace is 4
+  blocks by default and root can change it. Overstating duration fails with
+  `ComputeDurationTooLarge`. A very fast chain (500ms blocks) makes this bound tight.
+  Because each invocation carries its own start block, concurrent invocations of one
+  subscription do not interfere with each other's bound.
+- **The contract must exist.** `request_id` is the invocation ID for a `Subscription` and
+  the contract ID otherwise; one that resolves to neither is `AgreementNotFound`.
+- **The contract must still be open.** A result for a contract that has settled — including
+  one the runtime settled at its deadline (§3.6) — fails with `ContractSettled`.
 - **The `contract` argument must be re-supplied in full**, matching the original.
 - **`CheckCompute` gates the extrinsic.** `compute.result` is one of a small allowlist of
   calls permitted to carry a non-default `ComputePayload` (§8); anything else carrying one
   is rejected as `ForbiddenCompute`.
 
 To observe a result as an application, watch for these events. On a `Subscription` they
-are keyed by session ID, not contract ID — `ComputeResult` is what ties the two together:
+are keyed by invocation ID, not contract ID — `ComputeResult` is what ties the two
+together:
 
 | Event | Meaning |
 |---|---|
-| `compute.ComputeResult { request_id, contract_id }` | A result landed. `request_id` is the session for a `Subscription`; `contract_id` is always the contract that settled, and is the only place the pair is reported |
+| `compute.ComputeResult { request_id, contract_id }` | A result landed. `request_id` is the invocation for a `Subscription`; `contract_id` is always the contract that settled, and is the only place the pair is reported |
 | `compute.ExecutionSuccess` / `ExecutionFailed` / `ExecutionTerminated` | How the job ended |
 | `compute.ExecutionFullSettlement` / `ExecutionPartialSettlement` | How the budget resolved |
-| `compute.ContractSettled { refunded, reason }` | Contract closed, funds returned |
-| `compute.SubmitorFeePaid` / `InputFeePaid` / `DecryptionFeePaid` | Who was paid |
+| `compute.ContractSettled { refunded, reason }` | Funds returned. `reason` is `ResultReceived`, `DeadlineReached`, `BudgetExhausted`, or `Rejected` — the last leaves the contract `Rejected`, not `Settled` (§3.6). Deadline settlements and rejection refunds are emitted from block hooks, not from an extrinsic |
+| `compute.SubmitorFeePaid` / `InputFeePaid` / `DecryptionFeePaid` | Who was paid, and how much actually moved (§2.5) |
 
 `ComputeResult` and `ExecutionFailed` can both fire for the same request: a job that ran
 and failed still consumed compute and still pays out.
@@ -775,26 +807,22 @@ inconsistencies between the repositories, not documentation gaps.
    both to the same `MILLISECS_PER_BLOCK`. Adding `#[pallet::constant]` would make this
    exact rather than inferred.
 
-3. **`scripts/test-compute-result.mjs` is stale.** It calls `compute.result` with three
-   arguments; the extrinsic now takes five.
+3. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
+   as a block number, but the chain never reads it — contract expiry comes from
+   `ContractDeadlineDuration` (§3.6). The orchestrator reads the same field as a **timeout
+   in seconds** when running a container, so it is effectively an execution timeout.
 
-4. **`deadline` means two different things.** `ComputeInfo.deadline` is documented on-chain
-   as a block number and used as one by `compute.invoke`'s expiry check, but the
-   orchestrator reads the same field as a **timeout in seconds** when running a container.
-   At 500ms blocks, a value meant as N blocks (N/2 seconds) becomes an N-second container
-   budget — twice the intended window.
-
-5. **`/output` is a dead mount.** The orchestrator bind-mounts
+4. **`/output` is a dead mount.** The orchestrator bind-mounts
    `<staging>/output` at `/output` read-write, then never reads it and deletes the staging
    tree after submission. The result channel is stdout (§6.3). Either the mount should be
    removed or it should be collected — as it stands it silently invites data loss.
 
-6. **Ports never reach the container.** The orchestrator sources `ports` from a top-level
+5. **Ports never reach the container.** The orchestrator sources `ports` from a top-level
    extrinsic argument that `compute.agreement` does not define, so port publications are
    reachable only through its direct HTTP job API (§6.5). `programEnv` is no longer in this
    category — it is read, but only for access grants, never as environment variables.
 
-7. **Threshold encryption is bypassable as currently wired.** Two facts compound:
+6. **Threshold encryption is bypassable as currently wired.** Two facts compound:
 
    - `Ciphertext.enc_key` — the `PairingOutput` the symmetric key is derived from — is
      serialized into `td_params`, which is public in the extrinsic. Since the key is
@@ -809,7 +837,7 @@ inconsistencies between the repositories, not documentation gaps.
    confidentiality. Do not put a secret in a `ThresholdHybrid` contract on the strength of
    the encryption alone.
 
-8. **`ComputeInfo.metadata` is omitted by some helpers.** `dataContract`,
+7. **`ComputeInfo.metadata` is omitted by some helpers.** `dataContract`,
    `encryptedDataContract`, `storedCompute` and `accessContract` set it; `simpleCompute`
    and `inferenceCompute` do not. Supply it explicitly if you need a registered artifact to
    be identifiable on chain.
@@ -834,10 +862,10 @@ rejected as `ForbiddenCompute`.
 
 | Field | Meaning |
 |---|---|
-| `daType` | `0` none, `1` DA, `4` compute request |
-| `compute` | `0` dormant, `1` active |
-| `verification` | Verification mode |
-| `agreement` | 32-byte guardian peer keys (base58-decode the peer ID, drop the first 6 bytes) |
+| `daType` | Only bit `4` is read: on `dataAvailability.submitData` it ties the data to the agreement in `agreement[0]`, which must be `Accepted` (`InvalidAgreement` otherwise). Any other value is carried and ignored — including the `1` the SDK sets on `compute.agreement` |
+| `compute` | Carried, not read by the runtime. The SDK sets `0` for dormant, `1` for active |
+| `verification` | Carried, not read by the runtime |
+| `agreement` | With `daType` 4, its first entry is the 32-byte ID of the agreement the data belongs to |
 
 The SDK sets this for you in `createAgreement`, `submitData` and the encrypted-inference
 helpers. You need to construct one by hand only when calling `api.tx` directly.
@@ -856,17 +884,18 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 | `Invalid: Custom(145)` | Duplicate entries in `guardians` (§3.2). |
 | `Invalid: Custom(148)` | A named guardian is not registered/staked (§3.2). |
 | Opaque decode failure on `agreement` | Wrong field shape — snake_case keys, or a missing enum payload (§3). |
-| `ComputeDurationTooLarge` | Reported duration exceeds `(elapsed_blocks + 4) × block_ms` (§5). |
+| `ComputeDurationTooLarge` | Reported duration exceeds `(elapsed_blocks + ComputeDurationGraceBlocks) × block_ms` (§5). |
 | `ThresholdCommitmentMismatch` | A `ContractAccess` contract restated threshold params that are not the referenced contract's (§3.8). |
 | `ReferencedContractNotEncrypted` | `ContractAccess` pointed at a contract with no threshold commitment — not `Dormant`, or not `ThresholdHybrid` (§3.8). |
 | `ContractAccessNeedsContractId` | `ContractAccess` program paired with an input that is not a `ContractId` (§3.8). |
 | `ContractAccessNeedsThresholdCipher` | `ContractAccess` contract whose own cipher carries no `SilentThreshold` params (§3.8). |
 | `InvalidContractType` | `invoke` called on a non-`Subscription` contract. |
 | `NotContractOwner` | `invoke` called by someone other than the contract owner (§3.6). |
-| `ContractSettled` | Contract already settled — budget exhausted or deadline passed. |
-| `AgreementNotFound` | Unknown contract ID, a `Subscription` with no settlement record, or a `compute.result` whose `request_id` is neither a live session nor a contract (§3.7a). |
-| `ContractExpired` | Past the contract deadline. |
-| `invoke` returns Ok but nothing runs | Deadline or budget check settled the contract instead (§3.6). |
+| `TooManyOpenInvocations` | `invoke` while the contract already has `maxOpenInvocations` requests waiting for a result (§3.6). Wait for a result. |
+| `ContractSettled` | Contract already closed — budget exhausted, deadline passed (the runtime settles it then, §3.6), result received, or refunded on rejection. |
+| `AgreementNotFound` | Unknown contract ID, or a `compute.result` whose `request_id` is neither a pending invocation nor a contract (§3.7a). |
+| `ContractExpired` | Declared but never returned by the current runtime; expiry surfaces as `ContractSettled`. |
+| `invoke` returns Ok but nothing runs | The budget check (or, if settlement in that block was delayed, the deadline check) settled the contract instead (§3.6). |
 | `compute.agreement` hangs, never included, no error | A named guardian has not submitted its `agreement_response`; the tx is parked in the future queue (§2.1). |
 | Result is empty on-chain | The image wrote to `/output`; only stdout is collected (§6.3). |
 | Result contains log noise or banners | stderr is interleaved into stdout (§6.3). |

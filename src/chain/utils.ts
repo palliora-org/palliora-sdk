@@ -11,7 +11,7 @@ import type { ISubmittableResult } from "@polkadot/types/types";
 import type { EventRecord } from "@polkadot/types/interfaces";
 import type { ApiPromise } from "@polkadot/api";
 import type { Header, SignedBlock } from "@polkadot/types/interfaces";
-import { AgreementStatus, ContractInfo, ContractType, SessionInfo, SubmissionReceipt } from "./types";
+import { AgreementStatus, ContractInfo, ContractType, InvocationInfo, SubmissionReceipt } from "./types";
 
 /** ISubmittableResult extended with the concrete blockNumber present after finalization */
 interface SubmittableResultExtended extends ISubmittableResult {
@@ -188,7 +188,7 @@ export async function getContractInfo(contractId: string): Promise<ContractInfo 
     status: AgreementStatus;
     owner: string;
     originBlock: number;
-    sessionCount: number;
+    invocationCount: number;
     usagePrice: number | string;
     contractType: ContractType;
   } | null;
@@ -199,32 +199,33 @@ export async function getContractInfo(contractId: string): Promise<ContractInfo 
     status: info.status,
     owner: info.owner,
     originBlock: info.originBlock,
-    sessionCount: info.sessionCount,
+    invocationCount: info.invocationCount,
     usagePrice: BigInt(info.usagePrice),
     contractType: info.contractType,
   };
 }
 
 /**
- * Reads back one subscription session from `compute.sessions`.
+ * Reads back one subscription invocation from `compute.invocations`.
  *
- * Sessions are removed by `compute.result`, so this returns `null` both for an ID that
- * never existed and for one whose result has already landed. To map a settled session
+ * Invocations are removed once `compute.result` answers them, and with their contract when
+ * it settles, so this returns `null` for an ID that never existed, for one whose result has
+ * already landed, and for one whose contract has settled. To map a completed invocation
  * back to its contract, read the `contract_id` off the `compute.ComputeResult` event
  * instead.
  *
- * @param sessionId - Hex-encoded session ID, as emitted by `compute.ComputeInvoked`.
+ * @param invocationId - Hex-encoded invocation ID, as emitted by `compute.ComputeInvoked`.
  */
-export async function getSessionInfo(sessionId: string): Promise<SessionInfo | null> {
+export async function getInvocationInfo(invocationId: string): Promise<InvocationInfo | null> {
   const api = await getApi();
   if (!api) throw new Error("API not initialized");
 
   assert(
-    isFunction(api.query["compute"]?.["sessions"]),
-    `api.query.compute.sessions does not exist`,
+    isFunction(api.query["compute"]?.["invocations"]),
+    `api.query.compute.invocations does not exist`,
   );
 
-  const raw = await api.query["compute"]["sessions"](sessionId);
+  const raw = await api.query["compute"]["invocations"](invocationId);
   const info = raw.toPrimitive() as {
     contractId: string;
     index: number;
@@ -524,14 +525,14 @@ export async function watchForSubmissionReceipt(
  * Returns `null` if no matching event is found for that extrinsic.
  */
 /**
- * Reads the session ID off the `compute.ComputeInvoked` event emitted by the
+ * Reads the invocation ID off the `compute.ComputeInvoked` event emitted by the
  * `compute.invoke` at `extrinsicIndex`, or `null` if that extrinsic emitted none.
  *
  * A `compute.invoke` emits no `ComputeInvoked` when the deadline or budget check settled
  * the contract instead — the call still succeeds, so `null` here means "no job started",
  * not "lookup failed".
  */
-export async function getComputeInvokedSessionId(
+export async function getComputeInvokedInvocationId(
   blockHeight: number,
   extrinsicIndex: number,
 ): Promise<string | null> {
@@ -552,11 +553,11 @@ export async function getComputeInvokedSessionId(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dataHuman = match.event.data.toHuman() as Record<string, unknown> | unknown[];
   if (Array.isArray(dataHuman)) {
-    // Positional fallback: ComputeInvoked is { sessionId, contractId, who }, session first.
+    // Positional fallback: ComputeInvoked is { invocationId, contractId, who }, invocation first.
     const first = dataHuman[0];
     if (first != null) return String(first);
   } else if (dataHuman !== null && typeof dataHuman === "object") {
-    const id = dataHuman["sessionId"] ?? dataHuman["session_id"];
+    const id = dataHuman["invocationId"] ?? dataHuman["invocation_id"];
     if (id != null) return String(id);
   }
 

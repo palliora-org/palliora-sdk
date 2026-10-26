@@ -16,15 +16,14 @@ const RESULT_BYTES = [1, 2, 3, 4, 5, 6, 7, 8];
 // The on-chain account that originally submitted the request
 const SUBMITOR = '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty'; // Alice (replace with real submitor)
 
-// ── Chain opts (mirrors index.ts worker) ─────────────────────────────────────
+// The result relay reports the job's duration and outcome; this test submits an instant
+// success, which always passes the `compute_duration_ms` bound.
+const COMPUTE_DURATION_MS = 0;
+const EXECUTION_OUTCOME = 'Success';
+
+// ── Chain opts (mirrors the result relay worker: no ComputePayload, just the nonce) ──
 
 const OPTS = {
-  compute: {
-    verification: 0,
-    da_type: 8,
-    compute: 0,
-    fee: { compute: 0, guardian: 0, verifier: 0 },
-  },
   nonce: 0, // will be updated from chain before signing
 };
 
@@ -90,7 +89,13 @@ async function main() {
   console.log('   opts       :', JSON.stringify(OPTS));
   console.log('   contract   :', JSON.stringify(contract, null, 2));
 
-  const request = API.tx.compute.result(REQUEST_ID, contract, SUBMITOR);
+  const request = API.tx.compute.result(
+    REQUEST_ID,
+    contract,
+    SUBMITOR,
+    COMPUTE_DURATION_MS,
+    EXECUTION_OUTCOME,
+  );
 
   console.log('\n📤 Signing and submitting transaction...');
   const unsub = await request.signAndSend(signer, async (result) => {
