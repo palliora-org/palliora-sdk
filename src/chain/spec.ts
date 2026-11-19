@@ -391,7 +391,7 @@ export const API_TYPES = {
 		_enum: ['InsufficientBudget', 'RateMismatch']
 	},
 	SettlementReason: {
-		_enum: ['ResultReceived', 'DeadlineReached', 'BudgetExhausted', 'Rejected']
+		_enum: ['ResultReceived', 'DeadlineReached', 'BudgetExhausted', 'Rejected', 'DataSubmitted']
 	},
 	ExecutionOutcome: {
 		_enum: ['FullSettlement', 'PartialSettlement', 'Success', 'Failed', 'Terminated', 'TopUpTimeout']
