@@ -202,19 +202,19 @@ async function main() {
       { Inline: { data: bytes(input) } },
     );
 
-    let row = { turn, input, submitted: false, error: null, blockNumber: null, sessionId: null };
+    let row = { turn, input, submitted: false, error: null, blockNumber: null, invocationId: null };
     try {
       const sent = await signAndSend(tx, signer);
       row.submitted = true;
       row.blockNumber = sent.blockNumber;
-      // Session-based runtimes address the eventual result to the session, not the contract.
+      // The eventual result is addressed to the invocation, not the contract.
       const invoked = sent.tx_result.events.find(
         ({ event }) => event.section === "compute" && event.method === "ComputeInvoked",
       );
       const invokedData = invoked?.event?.data?.toJSON();
-      row.sessionId = Array.isArray(invokedData) ? invokedData[0] : invokedData?.sessionId ?? null;
+      row.invocationId = Array.isArray(invokedData) ? invokedData[0] : invokedData?.invocationId ?? null;
       console.log(`  submitted in block ${sent.blockNumber} (tx ${sent.hash})`);
-      console.log(`  sessionId: ${row.sessionId}`);
+      console.log(`  invocationId: ${row.invocationId}`);
     } catch (err) {
       row.error = String(err?.message ?? err);
       console.log(`  FAILED: ${row.error}`);
@@ -243,10 +243,10 @@ async function main() {
   console.log("=".repeat(78));
   console.log("Agreement id:", agreementId);
   console.log();
-  console.log("| invoke | submitted | block | sessionId | contract status | settlement | error |");
+  console.log("| invoke | submitted | block | invocationId | contract status | settlement | error |");
   console.log("|---|---|---|---|---|---|---|");
   for (const r of rows) {
-    const sid = r.sessionId ? `${r.sessionId.slice(0, 12)}…` : "-";
+    const sid = r.invocationId ? `${r.invocationId.slice(0, 12)}…` : "-";
     console.log(
       `| ${r.turn} | ${r.submitted} | ${r.blockNumber ?? "-"} | ${sid} | ${r.status} | ${r.settlementPresent} | ${r.error ?? "-"} |`,
     );
@@ -254,7 +254,7 @@ async function main() {
 
   const owner = (requestId) => {
     if (requestId === agreementId) return "contract (creation-time execution)";
-    const hit = rows.find((r) => r.sessionId === requestId);
+    const hit = rows.find((r) => r.invocationId === requestId);
     return hit ? `invoke ${hit.turn}` : "UNMATCHED";
   };
   console.log();
@@ -262,7 +262,7 @@ async function main() {
   const delivered = new Set(observed.results.map((r) => r.requestId));
   const missing = [
     ...(delivered.has(agreementId) ? [] : ["contract (creation-time execution)"]),
-    ...rows.filter((r) => r.sessionId && !delivered.has(r.sessionId)).map((r) => `invoke ${r.turn}`),
+    ...rows.filter((r) => r.invocationId && !delivered.has(r.invocationId)).map((r) => `invoke ${r.turn}`),
   ];
   console.log(`results delivered  : ${observed.results.length}`);
   console.log(`missing            : ${missing.length ? missing.join(", ") : "none"}`);

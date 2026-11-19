@@ -14,6 +14,11 @@ in the npm package, so it is present in `node_modules/@palliora.org/chainsdk/`.
 Do not infer chain semantics from TypeScript signatures alone — the fee floor, the
 guardian rate thresholds and the two-transaction group protocol are invisible from them.
 
+**Runtime upgrades.** Every SDK release must work on the runtime before an upgrade, the
+runtime after it, and historical blocks from earlier runtimes. The rules for keeping it that
+way are in the "Keeping the SDK working across upgrades" section of
+[`palliora/docs/RUNTIME-UPGRADES.md`](https://github.com/palliora-org/palliora/blob/main/docs/RUNTIME-UPGRADES.md).
+
 ## Layout
 
 | Path | Contents |

@@ -94,9 +94,9 @@ async function main() {
     throw new Error(`contract is ${info?.status}, not Accepted - nothing to test`);
   }
   if (settlement.isNone) throw new Error("settlement record is gone - contract was settled");
-  // An expired contract does not fail the invoke: the pallet settles it in place and
-  // returns Ok, so the extrinsic looks successful while no session is ever opened.
-  // Catch that here rather than reading it as a delivery failure.
+  // An expired contract is settled by the runtime in the first block past its deadline,
+  // after which every invoke fails with `ContractSettled`. Catch that here rather than
+  // reading it as a delivery failure.
   if (deadline === null || head > Number(deadline)) {
     throw new Error(
       `contract deadline ${deadline} passed (head ${head}) - the next invoke would settle it; a new agreement is needed`,
@@ -117,7 +117,7 @@ async function main() {
       { Inline: { data: bytes(input) } },
     );
 
-    const row = { turn, input, sessionId: null, blockNumber: null, error: null };
+    const row = { turn, input, invocationId: null, blockNumber: null, error: null };
     try {
       const sent = await signAndSend(tx, signer);
       row.blockNumber = sent.blockNumber;
@@ -125,9 +125,9 @@ async function main() {
         ({ event }) => event.section === "compute" && event.method === "ComputeInvoked",
       );
       const data = invoked?.event?.data?.toJSON();
-      row.sessionId = Array.isArray(data) ? data[0] : data?.sessionId ?? null;
+      row.invocationId = Array.isArray(data) ? data[0] : data?.invocationId ?? null;
       console.log(
-        `invoke ${turn} (${input}) -> block ${sent.blockNumber}, session ${row.sessionId?.slice(0, 14)}…`,
+        `invoke ${turn} (${input}) -> block ${sent.blockNumber}, invocation ${row.invocationId?.slice(0, 14)}…`,
       );
     } catch (err) {
       row.error = String(err?.message ?? err);
@@ -143,24 +143,24 @@ async function main() {
   unsub();
 
   const delivered = new Set(results.map((r) => r.requestId));
-  const missing = rows.filter((r) => r.sessionId && !delivered.has(r.sessionId));
+  const missing = rows.filter((r) => r.invocationId && !delivered.has(r.invocationId));
 
   console.log();
   console.log("=".repeat(78));
   console.log("SUMMARY");
   console.log("=".repeat(78));
-  console.log("| invoke | block | sessionId | result |");
+  console.log("| invoke | block | invocationId | result |");
   console.log("|---|---|---|---|");
   for (const r of rows) {
-    const hit = results.find((x) => x.requestId === r.sessionId);
+    const hit = results.find((x) => x.requestId === r.invocationId);
     console.log(
-      `| ${r.turn} | ${r.blockNumber ?? "-"} | ${r.sessionId?.slice(0, 14) ?? "-"}… | ` +
+      `| ${r.turn} | ${r.blockNumber ?? "-"} | ${r.invocationId?.slice(0, 14) ?? "-"}… | ` +
         `${hit ? `block ${hit.blockNumber}: ${JSON.stringify(hit.payload)}` : "MISSING"} |`,
     );
   }
   console.log();
-  console.log(`invokes submitted : ${rows.filter((r) => r.sessionId).length}/${INVOKES}`);
-  console.log(`results delivered : ${rows.filter((r) => delivered.has(r.sessionId)).length}`);
+  console.log(`invokes submitted : ${rows.filter((r) => r.invocationId).length}/${INVOKES}`);
+  console.log(`results delivered : ${rows.filter((r) => delivered.has(r.invocationId)).length}`);
   console.log(`missing           : ${missing.length ? missing.map((r) => `invoke ${r.turn}`).join(", ") : "none"}`);
   console.log();
   console.log("Final:", JSON.stringify((await api.query.compute.contracts(CONTRACT_ID)).toJSON()));
