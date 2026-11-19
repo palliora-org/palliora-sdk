@@ -13,9 +13,6 @@ const REQUEST_ID = '0x3733d79aeb651bda1de96ed3ea0b1cf2d849c240d332bf5d7bf58310de
 // Simulated compute result bytes (arbitrary payload)
 const RESULT_BYTES = [1, 2, 3, 4, 5, 6, 7, 8];
 
-// The on-chain account that originally submitted the request
-const SUBMITOR = '5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty'; // Alice (replace with real submitor)
-
 // The result relay reports the job's duration and outcome; this test submits an instant
 // success, which always passes the `compute_duration_ms` bound.
 const COMPUTE_DURATION_MS = 0;
@@ -84,7 +81,7 @@ async function main() {
 
   console.log('\n📋 Submitting compute.result extrinsic');
   console.log('   request_id :', REQUEST_ID);
-  console.log('   submitor   :', SUBMITOR);
+  console.log('   submitor   :', signer.address);
   console.log('   result     :', RESULT_BYTES);
   console.log('   opts       :', JSON.stringify(OPTS));
   console.log('   contract   :', JSON.stringify(contract, null, 2));
@@ -92,7 +89,8 @@ async function main() {
   const request = API.tx.compute.result(
     REQUEST_ID,
     contract,
-    SUBMITOR,
+    // The chain requires submitor == signer, and the signer must be in compute.resultSubmitters.
+    signer.address,
     COMPUTE_DURATION_MS,
     EXECUTION_OUTCOME,
   );
