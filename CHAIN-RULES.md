@@ -639,7 +639,11 @@ The rules that make results fail:
   the contract ID otherwise; one that resolves to neither is `AgreementNotFound`.
 - **The contract must still be open.** A result for a contract that has settled — including
   one the runtime settled at its deadline (§3.6) — fails with `ContractSettled`.
-- **The `contract` argument must be re-supplied in full**, matching the original.
+- **The `contract` argument is the result envelope, not the original agreement.** The chain
+  never compares it with the agreement: `result_relay` builds a fresh one whose
+  `compute.input` is `Inline` with the result bytes, and the chain indexes it as the result
+  payload. Its `guardians` are still checked like an agreement's (§3.2): non-empty, unique,
+  registered.
 - **It must be a top-level extrinsic.** `compute.agreement`, `compute.result` and
   `compute.invoke` fail with `NotTopLevelCall` inside `utility.batch`, `proxy`, `multisig`
   or any other wrapping call.
