@@ -65,6 +65,8 @@ The consequences are worth stating explicitly, because the failure is silent:
   never errors**. A hanging `signAndSend` is the expected symptom.
 - If every guardian responds and any one rejected, the transaction *is* included, and
   `compute.agreement` emits `AgreementFailed` and returns without reserving anything.
+- Only the contract's own `guardians` count. One rejection from any of them rejects the
+  agreement; acceptance needs every one of them. Responses from other guardians are ignored.
 - So name guardians you have reason to believe are live — from `getGuardianList()` or the
   current era's `guardian.guardians` — and treat a stalled agreement as a guardian
   availability problem, not a fee problem.
@@ -177,12 +179,13 @@ At `compute.result`, the reserved deposit is split:
 | Recipient | Amount |
 |---|---|
 | Owner of the input contract | `input_fee` (only when **`compute.input`** is a `ContractId`) |
-| The contract's guardians | `threshold_decryption_fee`, split equally — **only when there is more than one guardian** |
-| The result submitter | `result_fee + (computeRate × compute_duration_ms)` |
+| The contract's guardians | `threshold_decryption_fee`, split equally among them |
+| The result submitter (the allow-listed account that signed `compute.result`, §5) | `result_fee + (computeRate × compute_duration_ms)` |
 | You, the contract owner | Everything still reserved, refunded at settlement |
 
-The guardian split divides by `max(guardian_count, 3)`, so a 2-guardian contract leaves a
-third share reserved, which returns to you at settlement rather than being paid out.
+The split divides by the contract's real guardian count; any remainder of the division goes
+one unit each to the first guardians in the list. A single-guardian contract pays that
+guardian the whole fee.
 
 Only `compute.input` is billed. `SettlementInfo` records a `ContractId` from that field
 alone, so referencing a contract from `compute.program` — a stored program, say — costs
@@ -260,6 +263,7 @@ pallet, with three separate rules — each a distinct rejection code:
 | Must be non-empty, unless `compute.program` is `"Null"` | `Custom(149)` |
 | Entries must be unique — no duplicates | `Custom(145)` |
 | Every entry must be a registered, staked guardian | `Custom(148)` |
+| At most `compute.maxContractGuardians` (32) entries | `ExhaustsResources` in the pool, `TooManyGuardians` at dispatch |
 
 ### 3.3 `ComputeInfo` fields
 
@@ -360,6 +364,11 @@ still reserved — whether or not a result arrived. A result submitted after tha
 `ContractSettled`. Expiry is bounded per block (`compute.maxSettlementsPerBlock`), so a
 contract expiring in a crowded block may settle a block or two late, never early. `Dormant`
 contracts keep a deadline entry but never expire.
+
+**Using an agreement for `dataAvailability.submitData` consumes it.** Only the contract's
+owner may do so, and only while it is `Accepted`; the contract settles in the same call,
+returns any deposit and emits `ContractSettled { reason: DataSubmitted }`. Anyone else's
+`submitData` naming the agreement fails with `InvalidAgreement`.
 
 **A rejection after the deposit was reserved is refunded.** The guardians' verdict can
 land after `compute.agreement` was included. If it is a rejection, `on_finalize` returns
@@ -472,7 +481,10 @@ await storedCompute({
 }, consumer);
 ```
 
-Four rules govern this, and each is a distinct failure:
+Five rules govern this, and each is a distinct failure:
+
+- **The access contract must pay.** It must be `Active` or `Subscription`; a `Dormant` one
+  is refused in the pool (`Invalid: Payment`) and at dispatch (`ContractAccessMustPay`).
 
 - **The access contract must restate the referenced contract's cipher as its own.**
   Guardians run partial decryption over the cipher of the contract in front of them, never
@@ -604,6 +616,18 @@ ships no wrapper for it.
 
 The rules that make results fail:
 
+- **Only allow-listed accounts may submit.** The signer must be in
+  `compute.resultSubmitters` (at most `compute.maxResultSubmitters`, 16), which only Root
+  changes, through `compute.addResultSubmitter` / `compute.removeResultSubmitter` (events
+  `ResultSubmitterAdded` / `ResultSubmitterRemoved`). The list starts empty on a new chain,
+  so no result lands until Root adds the relay accounts. Others fail with
+  `NotResultSubmitter`, and the pool already refuses them as `BadSigner`.
+- **`submitor` must be the signer.** It is the account paid the result and compute fee, and
+  it stays a parameter only so the call keeps its encoding. Naming anyone else fails with
+  `InvalidSubmittor`.
+- **A `Subscription` result must answer an invocation.** `request_id` must be an invocation
+  ID; the contract ID itself fails with `InvocationRequired`.
+
 - **`compute_duration_ms` is bounded.** It must not exceed
   `(elapsed_blocks + ComputeDurationGraceBlocks) × MillisecondsPerBlock`, measured from the
   invocation's `started_block` (or `origin_block` for non-subscriptions). The grace is 4
@@ -616,6 +640,9 @@ The rules that make results fail:
 - **The contract must still be open.** A result for a contract that has settled — including
   one the runtime settled at its deadline (§3.6) — fails with `ContractSettled`.
 - **The `contract` argument must be re-supplied in full**, matching the original.
+- **It must be a top-level extrinsic.** `compute.agreement`, `compute.result` and
+  `compute.invoke` fail with `NotTopLevelCall` inside `utility.batch`, `proxy`, `multisig`
+  or any other wrapping call.
 - **`CheckCompute` gates the extrinsic.** `compute.result` is one of a small allowlist of
   calls permitted to carry a non-default `ComputePayload` (§8); anything else carrying one
   is rejected as `ForbiddenCompute`.
@@ -629,7 +656,7 @@ together:
 | `compute.ComputeResult { request_id, contract_id }` | A result landed. `request_id` is the invocation for a `Subscription`; `contract_id` is always the contract that settled, and is the only place the pair is reported |
 | `compute.ExecutionSuccess` / `ExecutionFailed` / `ExecutionTerminated` | How the job ended |
 | `compute.ExecutionFullSettlement` / `ExecutionPartialSettlement` | How the budget resolved |
-| `compute.ContractSettled { refunded, reason }` | Funds returned. `reason` is `ResultReceived`, `DeadlineReached`, `BudgetExhausted`, or `Rejected` — the last leaves the contract `Rejected`, not `Settled` (§3.6). Deadline settlements and rejection refunds are emitted from block hooks, not from an extrinsic |
+| `compute.ContractSettled { refunded, reason }` | Funds returned. `reason` is `ResultReceived`, `DeadlineReached`, `BudgetExhausted`, `DataSubmitted` (§3.6) or `Rejected` — the last leaves the contract `Rejected`, not `Settled` (§3.6). Deadline settlements and rejection refunds are emitted from block hooks, not from an extrinsic |
 | `compute.SubmitorFeePaid` / `InputFeePaid` / `DecryptionFeePaid` | Who was paid, and how much actually moved (§2.5) |
 
 `ComputeResult` and `ExecutionFailed` can both fire for the same request: a job that ran
@@ -888,8 +915,15 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 | `ThresholdCommitmentMismatch` | A `ContractAccess` contract restated threshold params that are not the referenced contract's (§3.8). |
 | `ReferencedContractNotEncrypted` | `ContractAccess` pointed at a contract with no threshold commitment — not `Dormant`, or not `ThresholdHybrid` (§3.8). |
 | `ContractAccessNeedsContractId` | `ContractAccess` program paired with an input that is not a `ContractId` (§3.8). |
+| `ContractAccessMustPay` (pool: `Invalid: Payment`) | A `ContractAccess` contract declared `Dormant`; it must be `Active` or `Subscription` (§3.8). |
 | `ContractAccessNeedsThresholdCipher` | `ContractAccess` contract whose own cipher carries no `SilentThreshold` params (§3.8). |
 | `InvalidContractType` | `invoke` called on a non-`Subscription` contract. |
+| `NotTopLevelCall` | `agreement`, `result` or `invoke` wrapped in a batch, proxy or multisig (§5). |
+| `TooManyGuardians` (pool: `ExhaustsResources`) | More than 32 entries in `guardians` (§3.2). |
+| `NotResultSubmitter` (pool: `BadSigner`) | `compute.result` signed by an account not in `compute.resultSubmitters` (§5). |
+| `InvalidSubmittor` | `compute.result` whose `submitor` is not its signer (§5). |
+| `InvocationRequired` | `compute.result` addressed to a `Subscription`'s contract ID instead of an invocation ID (§5). |
+| `InvalidAgreement` on `submitData` | The agreement is not `Accepted`, or you are not its owner (§3.6). |
 | `NotContractOwner` | `invoke` called by someone other than the contract owner (§3.6). |
 | `TooManyOpenInvocations` | `invoke` while the contract already has `maxOpenInvocations` requests waiting for a result (§3.6). Wait for a result. |
 | `ContractSettled` | Contract already closed — budget exhausted, deadline passed (the runtime settles it then, §3.6), result received, or refunded on rejection. |
