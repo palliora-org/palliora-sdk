@@ -240,6 +240,9 @@ Main compute exports:
 - `estimateMinFee({ computeRate, inputContractId? })` — the fee floor plus its breakdown
 - `getFeeParams()` — the four live chain parameters the floor derives from
 - `inferenceCompute`, `simpleCompute`, `dataContract`, `encryptedInferenceCompute`
+- `isResultSubmitter(address)`, `hasResultSubmitterStake(address)`,
+  `registerResultSubmitter(account)` — for node operators running a result relay; spec 34+
+  for self-registration ([CHAIN-RULES.md §5](CHAIN-RULES.md))
 
 ### Stake
 
