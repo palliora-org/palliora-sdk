@@ -180,7 +180,7 @@ At `compute.result`, the reserved deposit is split:
 |---|---|
 | Owner of the input contract | `input_fee` (only when **`compute.input`** is a `ContractId`) |
 | The contract's guardians | `threshold_decryption_fee`, split equally among them |
-| The result submitter (the allow-listed account that signed `compute.result`, §5) | `result_fee + (computeRate × compute_duration_ms)` |
+| The result submitter (the allow-listed or staked account that signed `compute.result`, §5) | `result_fee + (computeRate × compute_duration_ms)` |
 | You, the contract owner | Everything still reserved, refunded at settlement |
 
 The split divides by the contract's real guardian count; any remainder of the division goes
@@ -616,12 +616,25 @@ ships no wrapper for it.
 
 The rules that make results fail:
 
-- **Only allow-listed accounts may submit.** The signer must be in
-  `compute.resultSubmitters` (at most `compute.maxResultSubmitters`, 16), which only Root
-  changes, through `compute.addResultSubmitter` / `compute.removeResultSubmitter` (events
-  `ResultSubmitterAdded` / `ResultSubmitterRemoved`). The list starts empty on a new chain,
-  so no result lands until Root adds the relay accounts. Others fail with
-  `NotResultSubmitter`, and the pool already refuses them as `BadSigner`.
+- **Only result submitters may submit.** There are two ways to become one:
+  - **Root's allow-list.** `compute.resultSubmitters` (at most
+    `compute.maxResultSubmitters`, 16) is changed only by Root, through
+    `compute.addResultSubmitter` (event `ResultSubmitterAdded`). It starts empty on a new
+    chain.
+  - **Self-registration with stake** (since `spec_version` 34). An account bonded, as its
+    own controller, with at least `staking.minGuardianBond` of active stake calls
+    `compute.registerResultSubmitter()` (event `ResultSubmitterRegistered`) and is recorded
+    in `compute.stakedResultSubmitters`. Without that stake it fails with
+    `InsufficientStake`; already being a submitter by either route fails with
+    `AlreadyResultSubmitter`. The stake is checked again on every `result`, so unbonding
+    below the minimum suspends the registration and bonding again restores it. The account
+    withdraws itself with `compute.unregisterResultSubmitter()` (event
+    `ResultSubmitterUnregistered`).
+
+  `compute.removeResultSubmitter` (Root, event `ResultSubmitterRemoved`) withdraws either
+  kind. Any other signer fails with `NotResultSubmitter`, and the pool already refuses it as
+  `BadSigner`. The SDK's `isResultSubmitter`, `hasResultSubmitterStake` and
+  `registerResultSubmitter` mirror these checks.
 - **`submitor` must be the signer.** It is the account paid the result and compute fee, and
   it stays a parameter only so the call keeps its encoding. Naming anyone else fails with
   `InvalidSubmittor`.
@@ -924,7 +937,8 @@ helpers. You need to construct one by hand only when calling `api.tx` directly.
 | `InvalidContractType` | `invoke` called on a non-`Subscription` contract. |
 | `NotTopLevelCall` | `agreement`, `result` or `invoke` wrapped in a batch, proxy or multisig (§5). |
 | `TooManyGuardians` (pool: `ExhaustsResources`) | More than 32 entries in `guardians` (§3.2). |
-| `NotResultSubmitter` (pool: `BadSigner`) | `compute.result` signed by an account not in `compute.resultSubmitters` (§5). |
+| `NotResultSubmitter` (pool: `BadSigner`) | `compute.result` signed by an account neither in `compute.resultSubmitters` nor registered in `compute.stakedResultSubmitters` with enough stake (§5). |
+| `InsufficientStake` | `compute.registerResultSubmitter` from an account without `staking.minGuardianBond` of active stake bonded as its own controller (§5, spec 34+). |
 | `InvalidSubmittor` | `compute.result` whose `submitor` is not its signer (§5). |
 | `InvocationRequired` | `compute.result` addressed to a `Subscription`'s contract ID instead of an invocation ID (§5). |
 | `InvalidAgreement` on `submitData` | The agreement is not `Accepted`, or you are not its owner (§3.6). |
