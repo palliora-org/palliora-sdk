@@ -7,3 +7,4 @@ export * from './inference';
 export * from './participants';
 export * from './simple';
 export * from './stored';
+export * from './resultSubmitter';
